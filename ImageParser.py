@@ -257,7 +257,7 @@ class CS2WeeklyRewardExtractor:
             
             # Apply OCR with different configurations
             # Set Tesseract configuration for single line of text
-            custom_config = r'--oem 3 --psm 7 -c tessedit_char_whitelist="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 -|"'
+            custom_config = r'--oem 3 --psm 7 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_. '
             
             # Try OCR with different preprocessed images
             text1 = pytesseract.image_to_string(box, config=custom_config)
