@@ -1,5 +1,4 @@
 # CS-Weekly-Item-Journal
-# CS-Weekly-Item-Journal
 
 **CS2 Weekly Drop Analyzer**
 
