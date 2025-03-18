@@ -1,0 +1,7 @@
+opencv-python>=4.7.0
+numpy>=1.22.0
+pytesseract>=0.3.10
+ultralytics>=8.0.0
+matplotlib>=3.5.0
+pillow>=9.0.0
+pandas>=1.5.0

@@ -23,7 +23,7 @@ class CS2WeeklyRewardExtractor:
             print("Using default YOLOv8n model. For better results, train a custom model on CS2 UI elements.")
         
         # Configure pytesseract path if not in system PATH
-        # pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'  # Uncomment and modify for Windows
+        pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'  # Uncomment and modify for Windows
     
     def detect_weekly_section(self, image):
         """
