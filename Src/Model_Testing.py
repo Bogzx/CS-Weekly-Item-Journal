@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 model = YOLO("Models\BOX_TRAINED.pt")  # adjust path to your model file
 
 # 2. Prepare test images (either from a directory or a single test image)
-test_image_path = "image.png"  # adjust to your test image
+test_image_path = "WeeklyCarePackage_Photos_Sample\cs2-new-drops-system-v0-ithfcqpz7vqb1.webp"  # adjust to your test image
 
 # 3. Run inference
 results = model(test_image_path)
