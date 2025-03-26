@@ -68,7 +68,7 @@ function getSite() {
                             
                             // Generate Steam Market API URL for price data - using Factory New quality
                             if (skin.weapon && skin.skin) {
-                                const marketName = `${skin.weapon} | ${skin.skin} (Factory New)`;
+                                const marketName = `${skin.weapon} | ${skin.skin} (Minimal Wear)`;
                                 const encodedName = encodeURIComponent(marketName);
                                 skin.marketUrl = `https://steamcommunity.com/market/priceoverview/?appid=730&market_hash_name=${encodedName}`;
                             } else {
