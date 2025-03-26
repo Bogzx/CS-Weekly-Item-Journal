@@ -88,13 +88,13 @@ function getSite() {
                 
                 // Save to file
                 const jsonData = JSON.stringify(skins, null, 2); // Pretty print with 2 spaces
-                fs.writeFile("cs_skins.json", jsonData, (err) => {
+                /*fs.writeFile("cs_skins.json", jsonData, (err) => {
                     if (err) {
                         console.error("Error writing file:", err);
                     } else {
                         console.log("Successfully saved skins data to cs_skins.json");
                     }
-                });
+                });*/
                 
                 // Also save as CSV
                 const csvHeader = "Collection,Weapon,Skin,Quality,Steam Market API URL\n";
@@ -122,3 +122,36 @@ function getSite() {
 
     req.end();
 }
+
+/**
+ * create_cs_skins.js
+ * 
+ * Description:
+ * This script fetches CS:GO/CS2 skin data from the Steam Market and generates a CSV file
+ * with information including weapon type, skin name, quality, and Market API URLs.
+ * 
+ * Requirements:
+ * - Node.js (v12.0.0 or higher)
+ * - Required packages: 
+ *   - axios (npm install axios)
+ *   - papaparse (npm install papaparse)
+ * 
+ * Usage:
+ * node create_cs_skins.js [options]
+ * 
+ * Options:
+ * --output <path>     Path where the CSV file will be saved (default: cs_skins.csv)
+ * --batch-size <num>  Number of items to fetch per API request (default: 50)
+ * --max-items <num>   Maximum number of items to fetch (default: 5000)
+ * --delay <ms>        Delay between API requests in milliseconds (default: 1000)
+ * 
+ * Examples:
+ * node create_cs_skins.js
+ * node create_cs_skins.js --output my_skins.csv --max-items 1000
+ * node create_cs_skins.js --batch-size 20 --delay 2000
+ * 
+ * Notes:
+ * - Steam has rate limits, be careful with batch-size and delay settings
+ * - The script may take several minutes to complete depending on settings
+ * - The generated CSV will have columns: Collection, Weapon, Skin, Quality, Steam Market API URL
+ */
