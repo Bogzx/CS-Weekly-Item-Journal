@@ -189,7 +189,7 @@ def populate_cases(conn, cases_data, target_collections=None):
         
         # Try different possible column names for the URL
         url = None
-        for key in ['Steam Market API URL', 'Market API URL', 'URL']:
+        for key in ['Steam Market API URL', 'Market API URL', 'URL', 'SteamMarketURL']:
             if key in case:
                 url = case[key]
                 break
@@ -213,16 +213,79 @@ def populate_cases(conn, cases_data, target_collections=None):
     conn.commit()
     return counter
 
+def populate_graffiti(conn, graffiti_data, target_collections=None):
+    """
+    Add graffiti items to the database
+    
+    Parameters:
+    - conn: SQLite connection
+    - graffiti_data (list): List of dictionaries containing graffiti data
+    - target_collections (list): Optional list of collections to filter by
+    
+    Returns:
+    - int: Number of items added
+    """
+    cursor = conn.cursor()
+    counter = 0
+    
+    # Debug: Print a sample graffiti data to see column names
+    if graffiti_data:
+        print("Sample graffiti data keys:", list(graffiti_data[0].keys()))
+    
+    for graffiti in graffiti_data:
+        # Get collection and name information
+        collection = graffiti.get('Collection', '')
+        
+        # Use FullName as primary name if available, otherwise use Name
+        graffiti_name = graffiti.get('FullName', graffiti.get('Name', ''))
+        
+        if not graffiti_name:
+            print(f"Warning: Could not find graffiti name in row: {graffiti}")
+            continue
+        
+        # Skip if not in target collections (if specified)
+        if target_collections and collection not in target_collections:
+            continue
+        
+        # Try different possible column names for the URL
+        url = None
+        for key in ['SteamMarketURL', 'Steam Market API URL', 'Market API URL', 'URL']:
+            if key in graffiti:
+                url = graffiti[key]
+                break
+        
+        if not url:
+            print(f"Warning: Could not find URL for graffiti {graffiti_name}")
+            continue
+            
+        try:
+            cursor.execute('''
+            INSERT OR IGNORE INTO items (name, collection, market_api_url, item_type, last_updated)
+            VALUES (?, ?, ?, ?, ?)
+            ''', (graffiti_name, collection, url, 'graffiti', datetime.now()))
+            
+            if cursor.rowcount > 0:
+                counter += 1
+                if counter % 20 == 0:  # Log progress every 20 items
+                    print(f"Added {counter} graffiti so far...")
+        except sqlite3.Error as e:
+            print(f"Error inserting {graffiti_name}: {e}")
+    
+    conn.commit()
+    return counter
+
 def main():
     parser = argparse.ArgumentParser(description='Populate CS:GO items database with specific collections')
     parser.add_argument('--db', type=str, default='csgo_items.db', help='Path to SQLite database')
     parser.add_argument('--skins', type=str, default='cs_skins.csv', help='Path to skins CSV file')
     parser.add_argument('--cases', type=str, default='cs_cases.csv', help='Path to cases CSV file')
+    parser.add_argument('--graffiti', type=str, default='cs_graffiti.csv', help='Path to graffiti CSV file')
     parser.add_argument('--collections', type=str, nargs='+', 
                         help='List of collections to include (if not specified, all will be included)')
     parser.add_argument('--list-collections', action='store_true', help='List all available collections and exit')
-    parser.add_argument('--cases-only', action='store_true', help='Import only cases, not skins')
-    parser.add_argument('--skins-only', action='store_true', help='Import only skins, not cases')
+    parser.add_argument('--cases-only', action='store_true', help='Import only cases, not skins or graffiti')
+    parser.add_argument('--skins-only', action='store_true', help='Import only skins, not cases or graffiti')
+    parser.add_argument('--graffiti-only', action='store_true', help='Import only graffiti, not cases or skins')
     parser.add_argument('--debug', action='store_true', help='Print debug information')
     parser.add_argument('--no-quality-variants', action='store_true', 
                         help='Do not create multiple quality variants for each skin')
@@ -237,9 +300,15 @@ def main():
     # Connect to database
     conn = sqlite3.connect(args.db)
     
+    # Determine what to import based on flags
+    import_skins = not (args.cases_only or args.graffiti_only)
+    import_cases = not (args.skins_only or args.graffiti_only)
+    import_graffiti = not (args.cases_only or args.skins_only)
+    
     # Load data from CSV files
-    skins_data = [] if args.cases_only else read_csv_file(args.skins)
-    cases_data = [] if args.skins_only else read_csv_file(args.cases)
+    skins_data = [] if not import_skins else read_csv_file(args.skins)
+    cases_data = [] if not import_cases else read_csv_file(args.cases)
+    graffiti_data = [] if not import_graffiti else read_csv_file(args.graffiti)
     
     if args.debug:
         if cases_data:
@@ -248,8 +317,10 @@ def main():
                 print("First case data:", cases_data[0])
         if skins_data:
             print(f"Loaded {len(skins_data)} skins from {args.skins}")
+        if graffiti_data:
+            print(f"Loaded {len(graffiti_data)} graffiti from {args.graffiti}")
     
-    if not skins_data and not cases_data:
+    if not skins_data and not cases_data and not graffiti_data:
         print("No data loaded. Please check CSV file paths.")
         conn.close()
         return
@@ -265,8 +336,11 @@ def main():
                 all_case_names.add(case[key])
                 break
     
+    # Get all available graffiti collections
+    all_graffiti_collections = set(graffiti.get('Collection', '') for graffiti in graffiti_data if graffiti.get('Collection'))
+    
     # Combine all available collections
-    all_collections = all_skin_collections.union(all_case_names)
+    all_collections = all_skin_collections.union(all_case_names).union(all_graffiti_collections)
     
     # If --list-collections flag is present, show collections and exit
     if args.list_collections:
@@ -303,8 +377,9 @@ def main():
     # Add items to database
     skins_added = 0
     cases_added = 0
+    graffiti_added = 0
     
-    if not args.cases_only:
+    if import_skins:
         print("Adding skins to database...")
         if args.no_quality_variants:
             # Use original function (not shown here - would need to be defined)
@@ -316,96 +391,26 @@ def main():
             print("Creating multiple quality variants for each skin...")
             skins_added = populate_skins(conn, skins_data, target_collections)
     
-    if not args.skins_only:
+    if import_cases:
         print("Adding cases to database...")
         cases_added = populate_cases(conn, cases_data, target_collections)
     
-    # Show a message about the multiplier effect
+    if import_graffiti:
+        print("Adding graffiti to database...")
+        graffiti_added = populate_graffiti(conn, graffiti_data, target_collections)
+    
+    # Show a message about the multiplier effect and summary
     if skins_added > 0 and not args.no_quality_variants:
         print(f"Added {skins_added} skin variants (representing approximately {skins_added // 5} unique skins in 5 qualities each)")
     else:
         print(f"Added {skins_added} skins")
     
     print(f"Added {cases_added} cases")
-    print(f"Database populated: Added a total of {skins_added + cases_added} items")
+    print(f"Added {graffiti_added} graffiti")
+    print(f"Database populated: Added a total of {skins_added + cases_added + graffiti_added} items")
     
     # Close connection
     conn.close()
 
 if __name__ == "__main__":
     main()
-
-'''
-# Documentation for populate_database.py
-
-## Overview
-This script populates the CS:GO items database with data from CSV files.
-It can add both skins and cases, and supports filtering by collection.
-The script now supports creating multiple wear quality variants (Factory New,
-Minimal Wear, Field-Tested, Well-Worn, Battle-Scarred) for each skin.
-
-## Usage Examples
-1. Import all items from default CSV files with all quality variants:
-   ```
-   python populate_database.py
-   ```
-
-2. Import only cases (skip skins):
-   ```
-   python populate_database.py --cases-only
-   ```
-
-3. Import skins without creating quality variants:
-   ```
-   python populate_database.py --no-quality-variants
-   ```
-
-4. Specify custom CSV file paths:
-   ```
-   python populate_database.py --skins path/to/skins.csv --cases path/to/cases.csv
-   ```
-
-5. Import only specific collections:
-   ```
-   python populate_database.py --collections "Clutch Case" "Chroma Case"
-   ```
-
-6. List all available collections without importing:
-   ```
-   python populate_database.py --list-collections
-   ```
-
-7. Enable debug output:
-   ```
-   python populate_database.py --debug
-   ```
-
-## Command-line Arguments
-- --db: Path to SQLite database (default: csgo_items.db)
-- --skins: Path to skins CSV file (default: cs_skins.csv)
-- --cases: Path to cases CSV file (default: cs_cases.csv)
-- --collections: List of collections to include (space-separated)
-- --list-collections: List all available collections and exit
-- --cases-only: Import only cases, not skins
-- --skins-only: Import only skins, not cases
-- --debug: Print additional debug information
-- --no-quality-variants: Do not create multiple quality variants for each skin
-
-## CSV File Requirements
-- Skins CSV should have columns:
-  - Collection: Collection name
-  - Weapon: Weapon name
-  - Skin: Skin name
-  - Quality: Quality/wear level
-  - Steam Market API URL: API URL for price information
-
-- Cases CSV should have columns (flexible column naming):
-  - Case/Case Steam/Name: Case name
-  - Steam Market API URL/Market API URL: API URL for price information
-
-## Notes
-- By default, the script now creates 5 quality variants for each skin
-- Quality variants include Factory New, Minimal Wear, Field-Tested, Well-Worn, and Battle-Scarred
-- The script automatically modifies the Steam Market API URL for each quality
-- Use --no-quality-variants to revert to original behavior
-'''
