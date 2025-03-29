@@ -35,6 +35,11 @@
                                                     <div>
                                                         <p class="mb-0">{{ item.name }}</p>
                                                         <small class="text-muted">{{ item.collection }}</small>
+                                                        {% if result.confidence %}
+                                                            <span class="badge bg-{{ 'success' if result.confidence == 'high' else 'warning' if result.confidence == 'medium' else 'danger' }}">
+                                                                {{ result.confidence }} confidence ({{ (result.score * 100)|round(1) }}%)
+                                                            </span>
+                                                        {% endif %}
                                                     </div>
                                                     <div class="text-end">
                                                         {% if item.price %}

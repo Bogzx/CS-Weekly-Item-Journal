@@ -90,17 +90,26 @@ class WeeklyDropProcessor:
                 crop_path = os.path.join(output_dir, crop_filename)
                 cv2.imwrite(crop_path, crop)
             
-            # Only use the lower half for text detection
+            # First split the crop into upper and lower halves
             crop_height = crop.shape[0]
+            
+            # Extract the lower half
             lower_half = crop[crop_height//2:, :]
             
-            # Save the lower half for inspection if requested
+            # Now take only the upper portion of the lower half (where item names typically appear)
+            lower_half_height = lower_half.shape[0]
+            target_region = lower_half[:lower_half_height//2, :]  # Upper half of the lower half
+            
+            # Save the cropped regions for inspection if requested
             if save_crops:
                 lower_half_path = os.path.join(output_dir, f"lower_half_{col}.jpg")
                 cv2.imwrite(lower_half_path, lower_half)
+                
+                target_region_path = os.path.join(output_dir, f"target_region_{col}.jpg")
+                cv2.imwrite(target_region_path, target_region)
             
-            # Use EasyOCR for text detection on the lower half
-            results_ocr = self.reader.readtext(lower_half)
+            # Use EasyOCR for text detection on the target region
+            results_ocr = self.reader.readtext(target_region)
             
             # Extract text from OCR results
             text = " ".join([result[1] for result in results_ocr])
