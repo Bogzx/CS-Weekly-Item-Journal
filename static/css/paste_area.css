@@ -1,0 +1,51 @@
+.paste-area {
+    border: 2px dashed #ccc;
+    background-color: #f8f9fa;
+    padding: 20px;
+    text-align: center;
+    min-height: 150px;
+    margin-bottom: 20px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.paste-area:hover {
+    border-color: #007bff;
+    background-color: #e9ecef;
+}
+
+.paste-ready {
+    position: relative;
+}
+
+.paste-ready::before {
+    content: '📋 Ctrl+V to paste image';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: #6c757d;
+    font-size: 1.2rem;
+    pointer-events: none;
+}
+
+.paste-area:focus {
+    outline: none;
+    border-color: #0056b3;
+    box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+}
+
+.paste-area img {
+    max-width: 100%;
+    max-height: 300px;
+    object-fit: contain;
+}
+
+.spinner-border {
+    width: 3rem;
+    height: 3rem;
+    margin-bottom: 10px;
+}
