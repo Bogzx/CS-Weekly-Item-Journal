@@ -1,4 +1,3 @@
-
 # CS-Weekly-Item-Journal
 
 ![CS2 Drop Analyzer](https://img.shields.io/badge/CS2-Drop%20Analyzer-orange) ![Python](https://img.shields.io/badge/Python-3.6+-blue) ![TensorFlow](https://img.shields.io/badge/Ultralytics-YOLO-green) ![OpenCV](https://img.shields.io/badge/OpenCV-4.5+-red) ![Flask](https://img.shields.io/badge/Flask-2.0+-lightgrey)
@@ -64,7 +63,6 @@ The extracted text is processed through a sophisticated matching system that:
 * **Backend** : Python, Flask
 * **Database** : SQLite
 * **Text Processing** : Advanced fuzzy matching algorithms
-* **API Integration** : Steam Market API
 * **Task Scheduling** : APScheduler
 * **Frontend** : HTML, CSS, and JavaScript with Bootstrap for responsive design
 
@@ -146,29 +144,12 @@ python bulk_scraper.py --collections "Clutch Case" "Chroma Case"
 
 ## 🔍 Advanced Usage
 
-### Filtering by Item Properties
-
-```bash
-# Update only StatTrak Factory New AK-47 skins
-python bulk_scraper.py --weapon ak47 --quality stattrak --exterior fn
-```
-
 ### Database Verification
 
 ```bash
 # Verify database structure and content
 python verify_database.py
 ```
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
 
 ## 📜 License
 
@@ -179,12 +160,6 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 * Ultralytics for the YOLO implementation
 * EasyOCR and Tesseract projects for OCR capabilities
 * Steam for market data
-* The CS2 community for testing and feedback
-
-## 📞 Contact
-
-If you have any questions or suggestions, please open an issue or contact the repository maintainer.
-
----
+* The CS2 community for testing and feedback---
 
 *Note: This project is not affiliated with Valve Corporation or the Counter-Strike franchise. All CS2/CS:GO item names and related data are property of their respective owners.*
