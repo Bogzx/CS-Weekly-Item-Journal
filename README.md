@@ -1,6 +1,8 @@
 # CS-Weekly-Item-Journal
 
-![CS2 Drop Analyzer](https://img.shields.io/badge/CS2-Drop%20Analyzer-orange) ![Python](https://img.shields.io/badge/Python-3.6+-blue) ![TensorFlow](https://img.shields.io/badge/Ultralytics-YOLO-green) ![OpenCV](https://img.shields.io/badge/OpenCV-4.5+-red) ![Flask](https://img.shields.io/badge/Flask-2.0+-lightgrey)
+
+<img src="https://img.shields.io/badge/CS2-Drop%20Analyzer-orange" alt="CS2 Drop Analyzer"> <img src="https://img.shields.io/badge/Python-3.6+-blue" alt="Python"> <img src="https://img.shields.io/badge/Ultralytics-YOLO-green" alt="YOLO"> <img src="https://img.shields.io/badge/OpenCV-4.5+-red" alt="OpenCV"> <img src="https://img.shields.io/badge/Flask-2.0+-lightgrey" alt="Flask">
+
 
 A web application that analyzes your CS2 weekly drop screenshots, identifies items with AI, compares prices, and helps you track your drops over time in a personal journal. The system automatically recommends the highest-value item to select based on current Steam Market prices.
 
