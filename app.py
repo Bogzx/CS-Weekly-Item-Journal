@@ -12,6 +12,11 @@ from werkzeug.formparser import RequestEntityTooLarge
 from Src.ImageDetector.modified_detect_text import WeeklyDropProcessor
 from Src.ImageDetector.item_matcher import ItemMatcher
 
+from dotenv import load_dotenv
+
+# Load variables from .env file
+load_dotenv()
+
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24))
 

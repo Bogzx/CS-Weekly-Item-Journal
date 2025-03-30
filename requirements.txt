@@ -1,7 +1,18 @@
-opencv-python>=4.7.0
-numpy>=1.22.0
-pytesseract>=0.3.10
-ultralytics>=8.0.0
-matplotlib>=3.5.0
-pillow>=9.0.0
-pandas>=1.5.0
+# Web Framework
+Flask==2.3.3
+Werkzeug==2.3.7
+
+# Image Processing & ML
+ultralytics==8.0.196
+easyocr==1.7.1
+opencv-python==4.8.1.78
+numpy==1.25.2
+Pillow==10.0.1
+matplotlib==3.8.0
+pytesseract==0.3.10
+
+# Data Processing
+requests==2.31.0
+
+# Configuration
+python-dotenv==1.0.0
