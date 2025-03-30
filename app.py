@@ -904,12 +904,12 @@ def init_scheduler():
     from datetime import datetime
     from apscheduler.triggers.date import DateTrigger
     
-    scheduler.add_job(
+    '''scheduler.add_job(
         update_prices_job,
         trigger=DateTrigger(run_date=datetime.now()),
         id='price_update_test_job',
         name='Immediate test update'
-    )
+    )'''
     
     # Start the scheduler
     scheduler.start()

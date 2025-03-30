@@ -23,7 +23,7 @@ def fetch_price(market_url, max_retries=3):
     while retries <= max_retries:
         try:
             # Add a small delay to avoid rate limiting
-            time.sleep(5)
+            time.sleep(15)
             
             # Send request to Steam API
             response = requests.get(market_url)
