@@ -101,7 +101,7 @@ def ensure_dict(obj):
     if hasattr(obj, '__dict__'):
         return obj.__dict__
     
-    # Last resort, try to convert any attributes to a dictionary
+    # Handle objects with __slots__
     if hasattr(obj, '__slots__'):
         return {slot: getattr(obj, slot, None) for slot in obj.__slots__}
     
@@ -116,11 +116,10 @@ def ensure_dict(obj):
     return {'value': obj}
 
 def match_items_in_database(item_names):
-    """Match detected item names to the database."""
+    """Match detected item names to the database using the ItemMatcher."""
     results = []
-    conn = get_db_connection()
     
-    for name in item_names:
+    for i, name in enumerate(item_names):
         cleaned_name = clean_item_name(name)
         if not cleaned_name:
             results.append({
@@ -130,61 +129,134 @@ def match_items_in_database(item_names):
                 'matches': []
             })
             continue
+        
+        # Use the ItemMatcher to match the item with confidence
+        match_result = matcher.match_with_confidence(cleaned_name, threshold=0.4)
+        
+        if match_result['status'] == 'matched':
+            # Convert the matches to the expected format
+            match_list = []
             
-        # Try exact match first
-        try:
-            cur = conn.execute(
-                "SELECT id, name, collection, price, price_type, item_type FROM items WHERE name = ?",
-                (cleaned_name,)
-            )
-            matches = cur.fetchall()
-        except sqlite3.OperationalError:
-            # If price_type doesn't exist, use a query without it
-            cur = conn.execute(
-                "SELECT id, name, collection, price, item_type FROM items WHERE name = ?",
-                (cleaned_name,)
-            )
-            matches = cur.fetchall()
-        
-        # If no exact match, try partial match using LIKE
-        if not matches:
-            try:
-                search_term = f"%{cleaned_name}%"
-                cur = conn.execute(
-                    "SELECT id, name, collection, price, price_type, item_type FROM items WHERE name LIKE ?",
-                    (search_term,)
-                )
-                matches = cur.fetchall()
-            except sqlite3.OperationalError:
-                # If price_type doesn't exist, use a query without it
-                search_term = f"%{cleaned_name}%"
-                cur = conn.execute(
-                    "SELECT id, name, collection, price, item_type FROM items WHERE name LIKE ?",
-                    (search_term,)
-                )
-                matches = cur.fetchall()
-            matches = cur.fetchall()
-        
-        # Convert matches to dictionaries for easier handling in templates
-        match_list = []
-        for match in matches:
-            match_list.append({
-                'id': match['id'],
-                'name': match['name'],
-                'collection': match['collection'],
-                'price': match['price'],
-                'price_type': match.get('price_type', 'unknown'),  # Handle if column doesn't exist
-                'item_type': match['item_type']
+            # First get the best match
+            best_match = ensure_dict(match_result['best_match'])
+            best_match_entry = {
+                'id': best_match.get('id'),
+                'name': best_match.get('name', 'Unknown Item'),
+                'collection': best_match.get('collection', ''),
+                'price': best_match.get('price'),
+                'price_type': best_match.get('price_type', 'unknown'),
+                'item_type': best_match.get('item_type', ''),
+                'score': match_result['score'],
+                'confidence': match_result['confidence']
+            }
+            
+            # First item (index 0) should only show case type items
+            if i == 0:
+                # Filter to only include case type items
+                case_matches = []
+                
+                # Add the best match if it's a case
+                if best_match.get('item_type') == 'case':
+                    case_matches.append(best_match_entry)
+                
+                # Look for case items in other matches, but avoid duplicates
+                seen_ids = {best_match.get('id')} if best_match.get('id') else set()
+                
+                for match_data in match_result['matches']:
+                    match_item = ensure_dict(match_data.get('item', {}))
+                    item_id = match_item.get('id')
+                    
+                    # Skip if we've already added this item or if it's not a case
+                    if item_id in seen_ids or match_item.get('item_type') != 'case':
+                        continue
+                        
+                    seen_ids.add(item_id)
+                    score = match_data.get('score', 0)
+                    
+                    # Determine confidence level based on score
+                    confidence = 'low'
+                    if score > 0.85:
+                        confidence = 'high'
+                    elif score > 0.65:
+                        confidence = 'medium'
+                    
+                    case_matches.append({
+                        'id': item_id,
+                        'name': match_item.get('name', 'Unknown Item'),
+                        'collection': match_item.get('collection', ''),
+                        'price': match_item.get('price'),
+                        'price_type': match_item.get('price_type', 'unknown'),
+                        'item_type': match_item.get('item_type', ''),
+                        'score': score,
+                        'confidence': confidence
+                    })
+                
+                # Use case matches instead of all matches
+                match_list = case_matches
+            
+            # For graffiti items, only show the best match
+            elif best_match.get('item_type') == 'graffiti':
+                match_list = [best_match_entry]
+            
+            # For all other items, process normally
+            else:
+                # Add the best match
+                match_list.append(best_match_entry)
+                
+                # Add other matches if available
+                for match_data in match_result['matches'][1:]:  # Skip the first one as it's already added
+                    match_item = ensure_dict(match_data.get('item', {}))
+                    score = match_data.get('score', 0)
+                    
+                    # Determine confidence level based on score
+                    confidence = 'low'
+                    if score > 0.85:
+                        confidence = 'high'
+                    elif score > 0.65:
+                        confidence = 'medium'
+                    
+                    match_list.append({
+                        'id': match_item.get('id'),
+                        'name': match_item.get('name', 'Unknown Item'),
+                        'collection': match_item.get('collection', ''),
+                        'price': match_item.get('price'),
+                        'price_type': match_item.get('price_type', 'unknown'),
+                        'item_type': match_item.get('item_type', ''),
+                        'score': score,
+                        'confidence': confidence
+                    })
+                
+                # Add wear variations if they're not already in the matches
+                for variation in match_result['all_wear_variations']:
+                    variation = ensure_dict(variation)
+                    # Check if this variation is already in the match list
+                    if not any(match['id'] == variation.get('id') for match in match_list):
+                        match_list.append({
+                            'id': variation.get('id'),
+                            'name': variation.get('name', 'Unknown Item'),
+                            'collection': variation.get('collection', ''),
+                            'price': variation.get('price'),
+                            'price_type': variation.get('price_type', 'unknown'),
+                            'item_type': variation.get('item_type', ''),
+                            'score': 0.0,  # No direct match score
+                            'confidence': 'variation'  # Mark as a variation
+                        })
+            
+            results.append({
+                'original': name,
+                'cleaned': cleaned_name,
+                'status': 'found',
+                'matches': match_list
             })
-        
-        results.append({
-            'original': name,
-            'cleaned': cleaned_name,
-            'status': 'found' if match_list else 'not_found',
-            'matches': match_list
-        })
+        else:
+            # No matches found
+            results.append({
+                'original': name,
+                'cleaned': cleaned_name,
+                'status': 'not_found',
+                'matches': []
+            })
     
-    conn.close()
     return results
 
 @app.route('/')
@@ -206,6 +278,9 @@ def upload_file():
         # Check if cleanup is needed
         cleanup_uploads()
         
+        # Generate a unique screenshot ID for this upload
+        screenshot_id = str(uuid.uuid4())
+        
         # Handle file upload
         if 'file' in request.files:
             file = request.files['file']
@@ -213,7 +288,7 @@ def upload_file():
                 return jsonify({'error': 'No file selected'}), 400
                 
             # Generate a unique filename
-            filename = secure_filename(f"{uuid.uuid4()}_{file.filename}")
+            filename = secure_filename(f"{screenshot_id}_{file.filename}")
             filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
             file.save(filepath)
         
@@ -229,7 +304,7 @@ def upload_file():
                 image_data = image_data.split(',')[1]
                 
             # Generate a unique filename for the pasted image
-            filename = f"{uuid.uuid4()}.png"
+            filename = f"{screenshot_id}.png"
             filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
             
             # Save the image data
@@ -249,6 +324,7 @@ def upload_file():
             return render_template(
                 'results.html', 
                 error=f"Error processing items: {e}",
+                screenshot_id=screenshot_id,
                 item_results=[],
                 journal=session.get('journal', []),
                 total_value=sum(float(item.get('price', 0) or 0) for item in session.get('journal', []))
@@ -257,6 +333,7 @@ def upload_file():
         # Return the results
         return render_template(
             'results.html', 
+            screenshot_id=screenshot_id,
             item_results=matched_items,
             journal=session.get('journal', []),
             total_value=sum(float(item.get('price', 0) or 0) for item in session.get('journal', []))
@@ -275,44 +352,50 @@ def upload_file():
 
 @app.route('/add_to_journal', methods=['POST'])
 def add_to_journal():
-    """Add a selected item to the user's journal."""
-    item_id = request.form.get('item_id')
-    if not item_id:
+    """Add selected items to the user's journal."""
+    # Get the item IDs - this can be a single ID or multiple IDs (up to 2)
+    item_ids = request.form.getlist('item_id')
+    if not item_ids:
         return redirect(url_for('index'))
+    
+    # Limit to adding at most 2 items at a time
+    item_ids = item_ids[:2]
     
     try:
         conn = get_db_connection()
-        cur = conn.execute(
-            "SELECT id, name, collection, price, price_type, item_type FROM items WHERE id = ?",
-            (item_id,)
-        )
-        item = cur.fetchone()
-        conn.close()
-        
-        if not item:
-            return redirect(url_for('index'))
-        
-        # Ensure item is a dictionary
-        item_dict = ensure_dict(item)
-        
-        # Create a journal item with safe access
-        journal_item = {
-            'id': item_dict.get('id'),
-            'name': item_dict.get('name', 'Unknown Item'),
-            'collection': item_dict.get('collection', ''),
-            'price': item_dict.get('price'),
-            'price_type': item_dict.get('price_type', 'unknown'),
-            'item_type': item_dict.get('item_type', ''),
-            'timestamp': time.time()
-        }
-        
-        # Add to journal in session
         journal = session.get('journal', [])
-        journal.append(journal_item)
+        
+        for item_id in item_ids:
+            cur = conn.execute(
+                "SELECT id, name, collection, price, price_type, item_type FROM items WHERE id = ?",
+                (item_id,)
+            )
+            item = cur.fetchone()
+            
+            if item:
+                # Ensure item is a dictionary
+                item_dict = ensure_dict(item)
+                
+                # Create a journal item with safe access
+                journal_item = {
+                    'id': item_dict.get('id'),
+                    'name': item_dict.get('name', 'Unknown Item'),
+                    'collection': item_dict.get('collection', ''),
+                    'price': item_dict.get('price'),
+                    'price_type': item_dict.get('price_type', 'unknown'),
+                    'item_type': item_dict.get('item_type', ''),
+                    'timestamp': time.time(),
+                    'screenshot_id': request.form.get('screenshot_id', str(uuid.uuid4()))  # Track which screenshot this came from
+                }
+                
+                # Add to journal in session
+                journal.append(journal_item)
+        
+        conn.close()
         session['journal'] = journal
         
     except Exception as e:
-        print(f"Error adding item to journal: {e}")
+        print(f"Error adding items to journal: {e}")
     
     return redirect(url_for('index'))
 

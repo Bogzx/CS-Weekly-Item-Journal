@@ -3,138 +3,265 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Analysis Results - CS2 Weekly Rewards Analyzer</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <title>CS2 Weekly Drop Analyzer - Results</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        h1, h2, h3 {
+            color: #333;
+        }
+        .error {
+            background-color: #ffecec;
+            color: #721c24;
+            padding: 10px;
+            margin-bottom: 15px;
+            border-radius: 4px;
+            border: 1px solid #f5c6cb;
+        }
+        .results-container {
+            display: grid;
+            grid-template-columns: 3fr 1fr;
+            gap: 20px;
+        }
+        .item-results {
+            border-right: 1px solid #ddd;
+            padding-right: 20px;
+        }
+        .journal {
+            padding-left: 20px;
+        }
+        .item-box {
+            background-color: #f9f9f9;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        .match-item {
+            background-color: #fff;
+            border: 1px solid #e3e3e3;
+            border-radius: 4px;
+            padding: 10px;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+        }
+        .match-item label {
+            margin-left: 10px;
+            flex-grow: 1;
+        }
+        .match-item:hover {
+            background-color: #f0f0f0;
+        }
+        .match-item.high-confidence {
+            border-left: 5px solid #28a745;
+        }
+        .match-item.medium-confidence {
+            border-left: 5px solid #ffc107;
+        }
+        .match-item.low-confidence {
+            border-left: 5px solid #dc3545;
+        }
+        .score {
+            font-size: 0.8em;
+            color: #6c757d;
+        }
+        .journal-item {
+            background-color: #e9f7ef;
+            border: 1px solid #d4edda;
+            border-radius: 4px;
+            padding: 10px;
+            margin-bottom: 10px;
+            position: relative;
+        }
+        .journal-item form {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+        }
+        .remove-btn {
+            background-color: transparent;
+            border: none;
+            color: #dc3545;
+            cursor: pointer;
+            font-size: 1.2em;
+        }
+        .no-matches {
+            color: #6c757d;
+            font-style: italic;
+        }
+        .add-btn {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        .add-btn:hover {
+            background-color: #0069d9;
+        }
+        .home-btn {
+            margin-top: 20px;
+            display: inline-block;
+            padding: 8px 16px;
+            background-color: #6c757d;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+        }
+        .home-btn:hover {
+            background-color: #5a6268;
+        }
+        .selection-counter {
+            background-color: #e9ecef;
+            padding: 8px;
+            margin-top: 10px;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+    </style>
 </head>
 <body>
     <div class="container">
-        <header class="text-center my-4">
-            <h1>Analysis Results</h1>
-            <p class="lead">Here are the items detected in your screenshot</p>
-            <a href="{{ url_for('index') }}" class="btn btn-outline-secondary">← Back to Upload</a>
-        </header>
-
-        <div class="row">
-            <div class="col-md-8">
-                <div class="card mb-4">
-                    <div class="card-header">
-                        <h2 class="h5 mb-0">Detected Items</h2>
-                    </div>
-                    <div class="card-body">
-                        {% if item_results and item_results|length > 0 %}
-                            <div class="list-group">
-                                {% for result in item_results %}
-                                    <div class="list-group-item">
-                                        <h5 class="mb-1">{{ result.cleaned if result.cleaned else result.original }}</h5>
-                                        
-                                        {% if result.status == 'found' %}
-                                            {% if result.matches|length == 1 %}
-                                                {% set item = result.matches[0] %}
-                                                <div class="d-flex justify-content-between align-items-center mt-2">
-                                                    <div>
-                                                        <p class="mb-0">{{ item.name }}</p>
-                                                        <small class="text-muted">{{ item.collection }}</small>
-                                                        {% if result.confidence %}
-                                                            <span class="badge bg-{{ 'success' if result.confidence == 'high' else 'warning' if result.confidence == 'medium' else 'danger' }}">
-                                                                {{ result.confidence }} confidence ({{ (result.score * 100)|round(1) }}%)
-                                                            </span>
-                                                        {% endif %}
-                                                    </div>
-                                                    <div class="text-end">
-                                                        {% if item.price %}
-                                                            <p class="mb-0">${{ item.price|round(2) }}</p>
-                                                            <small class="text-muted">{{ item.price_type }} price</small>
-                                                        {% else %}
-                                                            <p class="mb-0 text-muted">Price not available</p>
-                                                        {% endif %}
-                                                    </div>
-                                                </div>
-                                                <form action="{{ url_for('add_to_journal') }}" method="post" class="mt-2">
-                                                    <input type="hidden" name="item_id" value="{{ item.id }}">
-                                                    <button type="submit" class="btn btn-sm btn-primary">Add to Journal</button>
-                                                </form>
-                                            {% else %}
-                                                <p>Multiple matches found. Please select one:</p>
-                                                <div class="list-group">
-                                                    {% for item in result.matches %}
-                                                        <div class="list-group-item list-group-item-action">
-                                                            <div class="d-flex justify-content-between align-items-center">
-                                                                <div>
-                                                                    <h6 class="mb-0">{{ item.name }}</h6>
-                                                                    <small class="text-muted">{{ item.collection }}</small>
-                                                                </div>
-                                                                <div class="text-end">
-                                                                    {% if item.price %}
-                                                                        <p class="mb-0">${{ item.price|round(2) }}</p>
-                                                                        <small class="text-muted">{{ item.price_type }} price</small>
-                                                                    {% else %}
-                                                                        <p class="mb-0 text-muted">Price not available</p>
-                                                                    {% endif %}
-                                                                </div>
-                                                            </div>
-                                                            <form action="{{ url_for('add_to_journal') }}" method="post" class="mt-2">
-                                                                <input type="hidden" name="item_id" value="{{ item.id }}">
-                                                                <button type="submit" class="btn btn-sm btn-primary">Add to Journal</button>
-                                                            </form>
-                                                        </div>
-                                                    {% endfor %}
-                                                </div>
-                                            {% endif %}
-                                        {% elif result.status == 'not_found' %}
-                                            <p class="text-danger">No matches found in database.</p>
-                                        {% elif result.status == 'empty' %}
-                                            <p class="text-warning">OCR could not extract text from this item.</p>
+        <h1>CS2 Weekly Drop Analyzer - Results</h1>
+        
+        {% if error %}
+        <div class="error">
+            <p>{{ error }}</p>
+        </div>
+        {% endif %}
+        
+        <div class="results-container">
+            <div class="item-results">
+                <h2>Detected Items</h2>
+                
+                {% if item_results %}
+                <p>Select up to 2 items to add to your journal:</p>
+                
+                <form action="{{ url_for('add_to_journal') }}" method="post" id="addItemsForm">
+                    <input type="hidden" name="screenshot_id" value="{{ screenshot_id }}">
+                    
+                    {% for result in item_results %}
+                    <div class="item-box">
+                        <h3>Detected: {{ result.original }}</h3>
+                        {% if result.status == 'found' %}
+                            {% if result.matches %}
+                                {% for match in result.matches %}
+                                <div class="match-item {{ match.confidence }}-confidence">
+                                    <input type="checkbox" name="item_id" value="{{ match.id }}" id="item-{{ match.id }}" class="item-checkbox">
+                                    <label for="item-{{ match.id }}">
+                                        <strong>{{ match.name }}</strong>
+                                        {% if match.price %}
+                                        <span>- ${{ match.price }}</span>
                                         {% endif %}
-                                    </div>
+                                        <div class="score">
+                                            Confidence: {{ match.confidence }}
+                                            {% if match.score > 0 %}
+                                            (Score: {{ "%.2f"|format(match.score) }})
+                                            {% endif %}
+                                        </div>
+                                    </label>
+                                </div>
                                 {% endfor %}
-                            </div>
-                        {% else %}
-                            <div class="alert alert-warning">
-                                No items were detected in the image. Try uploading a clearer screenshot of your weekly care package.
-                            </div>
+                            {% else %}
+                                <p class="no-matches">No matching items found in database.</p>
+                            {% endif %}
+                        {% elif result.status == 'not_found' %}
+                            <p class="no-matches">No matching items found in database.</p>
+                        {% elif result.status == 'empty' %}
+                            <p class="no-matches">Empty or unrecognizable text detected.</p>
                         {% endif %}
                     </div>
-                </div>
+                    {% endfor %}
+                    
+                    <div class="selection-counter">
+                        <p id="selectionCounter">0 items selected (maximum 2)</p>
+                    </div>
+                    
+                    <button type="submit" class="add-btn" id="addItemsBtn">Add Selected Items to Journal</button>
+                </form>
+                {% else %}
+                <p>No items were detected in the image.</p>
+                {% endif %}
+                
+                <a href="{{ url_for('index') }}" class="home-btn">Back to Home</a>
             </div>
-
-            <div class="col-md-4">
-                <div class="card">
-                    <div class="card-header">
-                        <h2 class="h5 mb-0">Your Journal</h2>
-                    </div>
-                    <div class="card-body">
-                        {% if journal and journal|length > 0 %}
-                            <ul class="list-group">
-                                {% for item in journal %}
-                                    <li class="list-group-item d-flex justify-content-between align-items-center">
-                                        <div>
-                                            <h6 class="mb-0">{{ item.name }}</h6>
-                                            <small class="text-muted">{{ item.collection }}</small>
-                                        </div>
-                                        <div class="d-flex align-items-center">
-                                            <span class="me-2">${{ item.price|round(2) if item.price else 'N/A' }}</span>
-                                            <form action="{{ url_for('remove_from_journal') }}" method="post">
-                                                <input type="hidden" name="item_id" value="{{ item.id }}">
-                                                <input type="hidden" name="timestamp" value="{{ item.timestamp }}">
-                                                <button type="submit" class="btn btn-sm btn-danger">&times;</button>
-                                            </form>
-                                        </div>
-                                    </li>
-                                {% endfor %}
-                            </ul>
-                            <div class="mt-3 text-end">
-                                <strong>Total Value: ${{ total_value|round(2) }}</strong>
-                            </div>
-                        {% else %}
-                            <p class="text-center text-muted">Your journal is empty. Add items after analyzing screenshots.</p>
+            
+            <div class="journal">
+                <h2>Your Journal</h2>
+                <p>Total Value: ${{ "%.2f"|format(total_value) }}</p>
+                
+                {% if journal %}
+                    {% for item in journal %}
+                    <div class="journal-item">
+                        <strong>{{ item.name }}</strong>
+                        {% if item.price %}
+                        <p>${{ item.price }}</p>
                         {% endif %}
+                        <form action="{{ url_for('remove_from_journal') }}" method="post">
+                            <input type="hidden" name="item_id" value="{{ item.id }}">
+                            <input type="hidden" name="timestamp" value="{{ item.timestamp }}">
+                            <button type="submit" class="remove-btn" title="Remove from journal">×</button>
+                        </form>
                     </div>
-                </div>
+                    {% endfor %}
+                {% else %}
+                    <p>Your journal is empty. Add items to track them.</p>
+                {% endif %}
             </div>
         </div>
     </div>
-
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <script>
+        // Limit selection to max 2 items
+        const checkboxes = document.querySelectorAll('.item-checkbox');
+        const counter = document.getElementById('selectionCounter');
+        const addBtn = document.getElementById('addItemsBtn');
+        
+        function updateSelectionCounter() {
+            const selected = document.querySelectorAll('.item-checkbox:checked');
+            counter.textContent = `${selected.length} items selected (maximum 2)`;
+            
+            // Disable checkboxes if 2 are already selected
+            if (selected.length >= 2) {
+                checkboxes.forEach(box => {
+                    if (!box.checked) {
+                        box.disabled = true;
+                    }
+                });
+            } else {
+                checkboxes.forEach(box => {
+                    box.disabled = false;
+                });
+            }
+            
+            // Disable add button if no items selected
+            addBtn.disabled = selected.length === 0;
+        }
+        
+        checkboxes.forEach(checkbox => {
+            checkbox.addEventListener('change', updateSelectionCounter);
+        });
+        
+        // Initial update
+        updateSelectionCounter();
+    </script>
 </body>
 </html>

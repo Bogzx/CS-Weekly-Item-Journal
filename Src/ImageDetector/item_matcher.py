@@ -44,7 +44,9 @@ class ItemMatcher:
         try:
             # Get columns dynamically to handle different database schemas
             cursor = conn.execute("PRAGMA table_info(items)")
-            columns = [col[1] for col in cursor.fetchall()]
+            # Fix for KeyError: 1 - access columns by index as they are now dictionaries
+            columns_info = cursor.fetchall()
+            columns = [col['name'] for col in columns_info]
             
             # Construct query based on available columns
             select_cols = ", ".join(columns)
