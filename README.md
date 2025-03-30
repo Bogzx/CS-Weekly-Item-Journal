@@ -64,7 +64,7 @@ The extracted text is processed through a sophisticated matching system that:
 * **Backend** : Python, Flask
 * **Database** : SQLite
 * **Text Processing** : Advanced fuzzy matching algorithms
-* **API Integration** : Steam Market API
+* **API Integration** : Steam Market 
 * **Task Scheduling** : APScheduler
 * **Frontend** : HTML, CSS, and JavaScript with Bootstrap for responsive design
 
@@ -140,13 +140,6 @@ The system automatically updates prices on a daily schedule, but you can also ma
 </span><span class=""><span class=""></span><span class="token comment"># Use bulk updater (faster)</span><span class="">
 </span></span><span class=""><span class="">python bulk_scraper.py --collections </span><span class="token string">"Clutch Case"</span><span class=""></span><span class="token string">"Chroma Case"</span></span></code></div></div></div></pre>
 
-## 🔍 Advanced Usage
-
-### Filtering by Item Properties
-
-<pre><div class="relative flex flex-col rounded-lg"><div class="text-text-300 absolute pl-3 pt-2.5 text-xs">bash</div><div class="pointer-events-none sticky my-0.5 ml-0.5 flex items-center justify-end px-1.5 py-1 mix-blend-luminosity top-0"><div class="from-bg-300/90 to-bg-300/70 pointer-events-auto rounded-md bg-gradient-to-b p-0.5 backdrop-blur-md"><button class="flex flex-row items-center gap-1 rounded-md p-1 py-0.5 text-xs transition-opacity delay-100 text-text-300 active:scale-95 select-none hover:bg-bg-200 opacity-60 hover:opacity-100" data-state="closed"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 256 256" class="text-text-500 mr-px -translate-y-[0.5px]"><path d="M200,32H163.74a47.92,47.92,0,0,0-71.48,0H56A16,16,0,0,0,40,48V216a16,16,0,0,0,16,16H200a16,16,0,0,0,16-16V48A16,16,0,0,0,200,32Zm-72,0a32,32,0,0,1,32,32H96A32,32,0,0,1,128,32Zm72,184H56V48H82.75A47.93,47.93,0,0,0,80,64v8a8,8,0,0,0,8,8h80a8,8,0,0,0,8-8V64a47.93,47.93,0,0,0-2.75-16H200Z"></path></svg><span class="text-text-200 pr-0.5">Copy</span></button></div></div><div><div class="prismjs code-block__code !my-0 !rounded-lg !text-sm !leading-relaxed"><code class="language-bash"><span class=""><span class="token comment"># Update only StatTrak Factory New AK-47 skins</span><span class="">
-</span></span><span class="">python bulk_scraper.py --weapon ak47 --quality stattrak --exterior fn</span></code></div></div></div></pre>
-
 ### Database Verification
 
 <pre><div class="relative flex flex-col rounded-lg"><div class="text-text-300 absolute pl-3 pt-2.5 text-xs">bash</div><div class="pointer-events-none sticky my-0.5 ml-0.5 flex items-center justify-end px-1.5 py-1 mix-blend-luminosity top-0"><div class="from-bg-300/90 to-bg-300/70 pointer-events-auto rounded-md bg-gradient-to-b p-0.5 backdrop-blur-md"><button class="flex flex-row items-center gap-1 rounded-md p-1 py-0.5 text-xs transition-opacity delay-100 text-text-300 active:scale-95 select-none hover:bg-bg-200 opacity-60 hover:opacity-100" data-state="closed"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 256 256" class="text-text-500 mr-px -translate-y-[0.5px]"><path d="M200,32H163.74a47.92,47.92,0,0,0-71.48,0H56A16,16,0,0,0,40,48V216a16,16,0,0,0,16,16H200a16,16,0,0,0,16-16V48A16,16,0,0,0,200,32Zm-72,0a32,32,0,0,1,32,32H96A32,32,0,0,1,128,32Zm72,184H56V48H82.75A47.93,47.93,0,0,0,80,64v8a8,8,0,0,0,8,8h80a8,8,0,0,0,8-8V64a47.93,47.93,0,0,0-2.75-16H200Z"></path></svg><span class="text-text-200 pr-0.5">Copy</span></button></div></div><div><div class="prismjs code-block__code !my-0 !rounded-lg !text-sm !leading-relaxed"><code class="language-bash"><span class=""><span class="token comment"># Verify database structure and content</span><span class="">
@@ -165,17 +158,6 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ## 📜 License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
-
-## 🙏 Acknowledgements
-
-* Ultralytics for the YOLO implementation
-* EasyOCR and Tesseract projects for OCR capabilities
-* Steam for market data
-* The CS2 community for testing and feedback
-
-## 📞 Contact
-
-If you have any questions or suggestions, please open an issue or contact the repository maintainer.
 
 ---
 
