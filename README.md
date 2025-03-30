@@ -1,9 +1,5 @@
-# CS-Weekly-Item-Journal
 
-
-
-<img src="https://img.shields.io/badge/CS2-Drop_Analyzer-orange" alt="CS2 Drop Analyzer"> <img src="https://img.shields.io/badge/Python-3.6%2B-blue" alt="Python"> <img src="https://img.shields.io/badge/YOLO-v11-green" alt="YOLO"> <img src="https://img.shields.io/badge/OpenCV-4.5%2B-red" alt="OpenCV"> <img src="https://img.shields.io/badge/Flask-2.0%2B-lightgrey" alt="Flask">
-
+<img src="https://img.shields.io/badge/CS2-Drop_Analyzer-orange" alt="CS2 Drop Analyzer"> <img src="https://img.shields.io/badge/Python-3.6%2B-blue" alt="Python"> Show Image <img src="https://img.shields.io/badge/OpenCV-4.5%2B-red" alt="OpenCV"> <img src="https://img.shields.io/badge/Flask-2.0%2B-lightgrey" alt="Flask">
 
 A web application that analyzes your CS2 weekly drop screenshots, identifies items with AI, compares prices, and helps you track your drops over time in a personal journal. The system automatically recommends the highest-value item to select based on current Steam Market prices.
 
@@ -44,7 +40,8 @@ The extracted text is processed through a sophisticated matching system that:
 
 ### Database System
 
-* Comprehensive SQLite database of CS2/CS:GO items
+* Comprehensive SQLite database of CS2/CS
+  items
 * Includes skins, cases, and graffiti with price information
 * Intelligent price update mechanisms (both individual and bulk)
 * Support for different wear variations and quality types
@@ -66,6 +63,7 @@ The extracted text is processed through a sophisticated matching system that:
 * **Backend** : Python, Flask
 * **Database** : SQLite
 * **Text Processing** : Advanced fuzzy matching algorithms
+* **API Integration** : Steam Market API
 * **Task Scheduling** : APScheduler
 * **Frontend** : HTML, CSS, and JavaScript with Bootstrap for responsive design
 
@@ -79,36 +77,34 @@ The extracted text is processed through a sophisticated matching system that:
 
 ### Installation Steps
 
-```bash
-# Clone the repository
-git clone https://github.com/yourusername/CS-Weekly-Item-Journal.git
-cd CS-Weekly-Item-Journal
-
-# Create and activate virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Create the database
-python create_database.py
-
-# Generate CS:GO skins data
-node create_cs_skins.js
-
-# Generate CS:GO cases data
-python create_cases.py
-
-# Populate the database
-python populate_database.py
-
-# Update item prices
-python update_price.py
-
-# Run the Flask application
-python app.py
-```
+<pre><div class="relative flex flex-col rounded-lg"><div class="text-text-300 absolute pl-3 pt-2.5 text-xs">bash</div><div class="pointer-events-none sticky my-0.5 ml-0.5 flex items-center justify-end px-1.5 py-1 mix-blend-luminosity top-0"><div class="from-bg-300/90 to-bg-300/70 pointer-events-auto rounded-md bg-gradient-to-b p-0.5 backdrop-blur-md"><button class="flex flex-row items-center gap-1 rounded-md p-1 py-0.5 text-xs transition-opacity delay-100 text-text-300 active:scale-95 select-none hover:bg-bg-200 opacity-60 hover:opacity-100" data-state="closed"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 256 256" class="text-text-500 mr-px -translate-y-[0.5px]"><path d="M200,32H163.74a47.92,47.92,0,0,0-71.48,0H56A16,16,0,0,0,40,48V216a16,16,0,0,0,16,16H200a16,16,0,0,0,16-16V48A16,16,0,0,0,200,32Zm-72,0a32,32,0,0,1,32,32H96A32,32,0,0,1,128,32Zm72,184H56V48H82.75A47.93,47.93,0,0,0,80,64v8a8,8,0,0,0,8,8h80a8,8,0,0,0,8-8V64a47.93,47.93,0,0,0-2.75-16H200Z"></path></svg><span class="text-text-200 pr-0.5">Copy</span></button></div></div><div><div class="prismjs code-block__code !my-0 !rounded-lg !text-sm !leading-relaxed"><code class="language-bash"><span class=""><span class="token comment"># Clone the repository</span><span class="">
+</span></span><span class=""><span class=""></span><span class="token function">git</span><span class=""> clone https://github.com/yourusername/CS-Weekly-Item-Journal.git
+</span></span><span class=""><span class=""></span><span class="token builtin class-name">cd</span><span class=""> CS-Weekly-Item-Journal
+</span></span><span class="">
+</span><span class=""><span class=""></span><span class="token comment"># Create and activate virtual environment</span><span class="">
+</span></span><span class="">python -m venv venv
+</span><span class=""><span class=""></span><span class="token builtin class-name">source</span><span class=""> venv/bin/activate  </span><span class="token comment"># On Windows: venv\Scripts\activate</span><span class="">
+</span></span><span class="">
+</span><span class=""><span class=""></span><span class="token comment"># Install dependencies</span><span class="">
+</span></span><span class=""><span class="">pip </span><span class="token function">install</span><span class=""> -r requirements.txt
+</span></span><span class="">
+</span><span class=""><span class=""></span><span class="token comment"># Create the database</span><span class="">
+</span></span><span class="">python create_database.py
+</span><span class="">
+</span><span class=""><span class=""></span><span class="token comment"># Generate CS:GO skins data</span><span class="">
+</span></span><span class=""><span class=""></span><span class="token function">node</span><span class=""> create_cs_skins.js
+</span></span><span class="">
+</span><span class=""><span class=""></span><span class="token comment"># Generate CS:GO cases data</span><span class="">
+</span></span><span class="">python create_cases.py
+</span><span class="">
+</span><span class=""><span class=""></span><span class="token comment"># Populate the database</span><span class="">
+</span></span><span class="">python populate_database.py
+</span><span class="">
+</span><span class=""><span class=""></span><span class="token comment"># Update item prices</span><span class="">
+</span></span><span class="">python update_price.py
+</span><span class="">
+</span><span class=""><span class=""></span><span class="token comment"># Run the Flask application</span><span class="">
+</span></span><span class="">python app.py</span></code></div></div></div></pre>
 
 Visit `http://127.0.0.1:5000` in your browser to access the application.
 
@@ -134,25 +130,36 @@ The system uses a SQLite database with the following key tables:
 
 The system automatically updates prices on a daily schedule, but you can also manually update them:
 
-```bash
-# Update prices for all items
-python update_price.py
-
-# Update prices for specific collections
-python update_price.py --collections "Clutch Case" "Chroma Case"
-
-# Use bulk updater (faster)
-python bulk_scraper.py --collections "Clutch Case" "Chroma Case"
-```
+<pre><div class="relative flex flex-col rounded-lg"><div class="text-text-300 absolute pl-3 pt-2.5 text-xs">bash</div><div class="pointer-events-none sticky my-0.5 ml-0.5 flex items-center justify-end px-1.5 py-1 mix-blend-luminosity top-0"><div class="from-bg-300/90 to-bg-300/70 pointer-events-auto rounded-md bg-gradient-to-b p-0.5 backdrop-blur-md"><button class="flex flex-row items-center gap-1 rounded-md p-1 py-0.5 text-xs transition-opacity delay-100 text-text-300 active:scale-95 select-none hover:bg-bg-200 opacity-60 hover:opacity-100" data-state="closed"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 256 256" class="text-text-500 mr-px -translate-y-[0.5px]"><path d="M200,32H163.74a47.92,47.92,0,0,0-71.48,0H56A16,16,0,0,0,40,48V216a16,16,0,0,0,16,16H200a16,16,0,0,0,16-16V48A16,16,0,0,0,200,32Zm-72,0a32,32,0,0,1,32,32H96A32,32,0,0,1,128,32Zm72,184H56V48H82.75A47.93,47.93,0,0,0,80,64v8a8,8,0,0,0,8,8h80a8,8,0,0,0,8-8V64a47.93,47.93,0,0,0-2.75-16H200Z"></path></svg><span class="text-text-200 pr-0.5">Copy</span></button></div></div><div><div class="prismjs code-block__code !my-0 !rounded-lg !text-sm !leading-relaxed"><code class="language-bash"><span class=""><span class="token comment"># Update prices for all items</span><span class="">
+</span></span><span class="">python update_price.py
+</span><span class="">
+</span><span class=""><span class=""></span><span class="token comment"># Update prices for specific collections</span><span class="">
+</span></span><span class=""><span class="">python update_price.py --collections </span><span class="token string">"Clutch Case"</span><span class=""></span><span class="token string">"Chroma Case"</span><span class="">
+</span></span><span class="">
+</span><span class=""><span class=""></span><span class="token comment"># Use bulk updater (faster)</span><span class="">
+</span></span><span class=""><span class="">python bulk_scraper.py --collections </span><span class="token string">"Clutch Case"</span><span class=""></span><span class="token string">"Chroma Case"</span></span></code></div></div></div></pre>
 
 ## 🔍 Advanced Usage
 
+### Filtering by Item Properties
+
+<pre><div class="relative flex flex-col rounded-lg"><div class="text-text-300 absolute pl-3 pt-2.5 text-xs">bash</div><div class="pointer-events-none sticky my-0.5 ml-0.5 flex items-center justify-end px-1.5 py-1 mix-blend-luminosity top-0"><div class="from-bg-300/90 to-bg-300/70 pointer-events-auto rounded-md bg-gradient-to-b p-0.5 backdrop-blur-md"><button class="flex flex-row items-center gap-1 rounded-md p-1 py-0.5 text-xs transition-opacity delay-100 text-text-300 active:scale-95 select-none hover:bg-bg-200 opacity-60 hover:opacity-100" data-state="closed"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 256 256" class="text-text-500 mr-px -translate-y-[0.5px]"><path d="M200,32H163.74a47.92,47.92,0,0,0-71.48,0H56A16,16,0,0,0,40,48V216a16,16,0,0,0,16,16H200a16,16,0,0,0,16-16V48A16,16,0,0,0,200,32Zm-72,0a32,32,0,0,1,32,32H96A32,32,0,0,1,128,32Zm72,184H56V48H82.75A47.93,47.93,0,0,0,80,64v8a8,8,0,0,0,8,8h80a8,8,0,0,0,8-8V64a47.93,47.93,0,0,0-2.75-16H200Z"></path></svg><span class="text-text-200 pr-0.5">Copy</span></button></div></div><div><div class="prismjs code-block__code !my-0 !rounded-lg !text-sm !leading-relaxed"><code class="language-bash"><span class=""><span class="token comment"># Update only StatTrak Factory New AK-47 skins</span><span class="">
+</span></span><span class="">python bulk_scraper.py --weapon ak47 --quality stattrak --exterior fn</span></code></div></div></div></pre>
+
 ### Database Verification
 
-```bash
-# Verify database structure and content
-python verify_database.py
-```
+<pre><div class="relative flex flex-col rounded-lg"><div class="text-text-300 absolute pl-3 pt-2.5 text-xs">bash</div><div class="pointer-events-none sticky my-0.5 ml-0.5 flex items-center justify-end px-1.5 py-1 mix-blend-luminosity top-0"><div class="from-bg-300/90 to-bg-300/70 pointer-events-auto rounded-md bg-gradient-to-b p-0.5 backdrop-blur-md"><button class="flex flex-row items-center gap-1 rounded-md p-1 py-0.5 text-xs transition-opacity delay-100 text-text-300 active:scale-95 select-none hover:bg-bg-200 opacity-60 hover:opacity-100" data-state="closed"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 256 256" class="text-text-500 mr-px -translate-y-[0.5px]"><path d="M200,32H163.74a47.92,47.92,0,0,0-71.48,0H56A16,16,0,0,0,40,48V216a16,16,0,0,0,16,16H200a16,16,0,0,0,16-16V48A16,16,0,0,0,200,32Zm-72,0a32,32,0,0,1,32,32H96A32,32,0,0,1,128,32Zm72,184H56V48H82.75A47.93,47.93,0,0,0,80,64v8a8,8,0,0,0,8,8h80a8,8,0,0,0,8-8V64a47.93,47.93,0,0,0-2.75-16H200Z"></path></svg><span class="text-text-200 pr-0.5">Copy</span></button></div></div><div><div class="prismjs code-block__code !my-0 !rounded-lg !text-sm !leading-relaxed"><code class="language-bash"><span class=""><span class="token comment"># Verify database structure and content</span><span class="">
+</span></span><span class="">python verify_database.py</span></code></div></div></div></pre>
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
 ## 📜 License
 
@@ -163,6 +170,14 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 * Ultralytics for the YOLO implementation
 * EasyOCR and Tesseract projects for OCR capabilities
 * Steam for market data
-* The CS2 community for testing and feedback---
+* The CS2 community for testing and feedback
 
-*Note: This project is not affiliated with Valve Corporation or the Counter-Strike franchise. All CS2/CS:GO item names and related data are property of their respective owners.*
+## 📞 Contact
+
+If you have any questions or suggestions, please open an issue or contact the repository maintainer.
+
+---
+
+*Note: This project is not affiliated with Valve Corporation or the Counter-Strike franchise. All CS2/CS*
+
+* item names and related data are property of their respective owners.*
