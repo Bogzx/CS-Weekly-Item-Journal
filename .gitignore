@@ -177,6 +177,7 @@ cython_debug/
 *.csv
 *.db
 *.json
-*.db-shm
-*.db-wal
 /uploads
+/uploads
+*.db-wal
+*.db-shm

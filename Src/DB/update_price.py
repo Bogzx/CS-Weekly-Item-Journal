@@ -4,6 +4,7 @@ import json
 import time
 import argparse
 import os
+import random
 from datetime import datetime
 
 def fetch_price(market_url, max_retries=3):
@@ -70,7 +71,31 @@ def fetch_price(market_url, max_retries=3):
     
     return None, None
 
-def update_prices(db_path, collection_filter=None, max_items=None, retry_on_rate_limit=True):
+# Function to retry database operations with exponential backoff
+def execute_with_retry(conn, sql, params=(), max_retries=5, initial_delay=0.1):
+    """Execute a SQL statement with retry logic for handling database locks."""
+    cursor = conn.cursor()
+    retries = 0
+    delay = initial_delay
+    
+    while True:
+        try:
+            cursor.execute(sql, params)
+            return cursor
+        except sqlite3.OperationalError as e:
+            if "database is locked" in str(e) and retries < max_retries:
+                retries += 1
+                # Add some randomness to avoid thundering herd problem
+                jitter = random.uniform(0.1, 0.3)
+                wait_time = delay + jitter
+                print(f"Database is locked. Retry {retries}/{max_retries} after {wait_time:.2f}s")
+                time.sleep(wait_time)
+                # Exponential backoff
+                delay *= 2
+            else:
+                raise
+
+def update_prices(db_path, collection_filter=None, max_items=None, retry_on_rate_limit=True, include_cases_graffiti=False):
     """
     Update prices for items in the database
     
@@ -79,16 +104,20 @@ def update_prices(db_path, collection_filter=None, max_items=None, retry_on_rate
     - collection_filter (list): Optional list of collections to filter by
     - max_items (int): Maximum number of items to update prices for
     - retry_on_rate_limit (bool): Whether to retry requests when rate limited
+    - include_cases_graffiti (bool): If True, also update all cases and graffiti regardless of collection filter
     
     Returns:
     - int: Number of prices updated
     """
-    # Connect to database
-    conn = sqlite3.connect(db_path)
+    # Set a longer timeout for the SQLite connection
+    conn = sqlite3.connect(db_path, timeout=60.0)  # 60 second timeout
+    
+    # Enable immediate transactions to reduce lock time
+    conn.isolation_level = 'IMMEDIATE'
     
     # Add price_type column if it doesn't exist
     try:
-        conn.execute("ALTER TABLE items ADD COLUMN price_type TEXT")
+        execute_with_retry(conn, "ALTER TABLE items ADD COLUMN price_type TEXT")
         print("Added price_type column to items table")
     except sqlite3.OperationalError:
         # Column already exists
@@ -96,21 +125,52 @@ def update_prices(db_path, collection_filter=None, max_items=None, retry_on_rate
     
     cursor = conn.cursor()
     
-    # Build the query
-    query = "SELECT id, name, market_api_url FROM items WHERE market_api_url IS NOT NULL"
-    params = []
+    # Handle the case where we want to include all cases and graffiti
+    if include_cases_graffiti:
+        print("Special case: Including all cases and graffiti items regardless of collection filter")
+        
+        # First, build a query to get all items in specified collections (if any)
+        collection_query = ""
+        collection_params = []
+        
+        if collection_filter:
+            placeholders = ','.join(['?'] * len(collection_filter))
+            collection_query = f"collection IN ({placeholders})"
+            collection_params.extend(collection_filter)
+        
+        # Now, build the query to get all items in collections OR cases/graffiti
+        query = "SELECT id, name, market_api_url FROM items WHERE market_api_url IS NOT NULL AND ("
+        params = []
+        
+        # Add collection filter if present
+        if collection_query:
+            query += collection_query
+            params.extend(collection_params)
+            query += " OR "
+        
+        # Add case and graffiti filter
+        query += "item_type IN ('case', 'graffiti'))"
+        
+        # Add limit if specified
+        if max_items:
+            query += " LIMIT ?"
+            params.append(max_items)
+    else:
+        # Regular case - only filter by collections
+        query = "SELECT id, name, market_api_url FROM items WHERE market_api_url IS NOT NULL"
+        params = []
+        
+        if collection_filter:
+            placeholders = ','.join(['?'] * len(collection_filter))
+            query += f" AND collection IN ({placeholders})"
+            params.extend(collection_filter)
+        
+        if max_items:
+            query += " LIMIT ?"
+            params.append(max_items)
     
-    if collection_filter:
-        placeholders = ','.join(['?'] * len(collection_filter))
-        query += f" AND collection IN ({placeholders})"
-        params.extend(collection_filter)
-    
-    if max_items:
-        query += " LIMIT ?"
-        params.append(max_items)
-    
-    # Fetch items to update
-    cursor.execute(query, params)
+    # Fetch items to update using retry logic
+    cursor = execute_with_retry(conn, query, params)
     items = cursor.fetchall()
     
     if not items:
@@ -125,30 +185,43 @@ def update_prices(db_path, collection_filter=None, max_items=None, retry_on_rate
     failed_count = 0
     rate_limited_count = 0
     
-    for item_id, name, url in items:
-        max_retries = 3 if retry_on_rate_limit else 0
-        price, price_type = fetch_price(url, max_retries)
+    # Process items in smaller batches to reduce lock time
+    batch_size = 10  # Update 10 items at a time
+    for i in range(0, len(items), batch_size):
+        batch_items = items[i:i+batch_size]
         
-        if price is not None:
-            cursor.execute(
-                "UPDATE items SET price = ?, price_type = ?, last_updated = ? WHERE id = ?",
-                (price, price_type, datetime.now(), item_id)
-            )
-            print(f"Updated {name}: ${price:.2f} ({price_type} price)")
-            counter += 1
+        for item_id, name, url in batch_items:
+            max_retries = 3 if retry_on_rate_limit else 0
+            price, price_type = fetch_price(url, max_retries)
             
-            if price_type == 'lowest':
-                lowest_count += 1
-            elif price_type == 'median':
-                median_count += 1
-        else:
-            failed_count += 1
-            # Check if this was a rate limit issue
-            if retry_on_rate_limit and max_retries > 0:
-                rate_limited_count += 1
+            if price is not None:
+                try:
+                    # Use retry logic for database updates
+                    execute_with_retry(
+                        conn,
+                        "UPDATE items SET price = ?, price_type = ?, last_updated = ? WHERE id = ?",
+                        (price, price_type, datetime.now(), item_id)
+                    )
+                    # Commit after each update to release locks faster
+                    conn.commit()
+                    
+                    print(f"Updated {name}: ${price:.2f} ({price_type} price)")
+                    counter += 1
+                    
+                    if price_type == 'lowest':
+                        lowest_count += 1
+                    elif price_type == 'median':
+                        median_count += 1
+                except Exception as e:
+                    print(f"Error updating {name}: {e}")
+                    failed_count += 1
+            else:
+                failed_count += 1
+                # Check if this was a rate limit issue
+                if retry_on_rate_limit and max_retries > 0:
+                    rate_limited_count += 1
     
-    # Commit changes and close connection
-    conn.commit()
+    # Close connection
     conn.close()
     
     print(f"\nSummary:")
@@ -167,6 +240,8 @@ def main():
     parser.add_argument('--collections', type=str, nargs='+', help='List of collections to update')
     parser.add_argument('--max', type=int, help='Maximum number of items to update')
     parser.add_argument('--no-retry', action='store_true', help='Disable retry on rate limiting')
+    parser.add_argument('--all-cases-graffiti', action='store_true', 
+                       help='Update all cases and graffiti regardless of collection filter')
     
     args = parser.parse_args()
     
@@ -176,70 +251,15 @@ def main():
         return
     
     # Update prices
-    updated = update_prices(args.db, args.collections, args.max, not args.no_retry)
+    updated = update_prices(
+        args.db, 
+        args.collections, 
+        args.max, 
+        not args.no_retry,
+        args.all_cases_graffiti
+    )
     
     print(f"Price update complete. Updated {updated} items.")
 
 if __name__ == "__main__":
     main()
-
-'''
-# Documentation for update_price.py
-
-## Overview
-This script updates the prices of CS:GO items in the database by fetching current
-price information from the Steam Market API. It handles rate limiting and can 
-work with different price types (lowest and median).
-
-## Usage Examples
-1. Update prices for all items with automatic retries:
-   ```
-   python update_price.py
-   ```
-
-2. Update prices without retry on rate limiting:
-   ```
-   python update_price.py --no-retry
-   ```
-
-3. Update prices for specific collections:
-   ```
-   python update_price.py --collections "Clutch Case" "Chroma Case"
-   ```
-
-4. Limit the number of items to update (useful for testing):
-   ```
-   python update_price.py --max 10
-   ```
-
-5. Combine options:
-   ```
-   python update_price.py --collections "Clutch Case" --max 5 --no-retry
-   ```
-
-## Command-line Arguments
-- --db: Path to SQLite database (default: csgo_items.db)
-- --collections: List of collections to update (space-separated)
-- --max: Maximum number of items to update
-- --no-retry: Disable retry on rate limiting
-
-## Functions
-- fetch_price(market_url, max_retries): Fetches current price from Steam Market API
-  - Returns a tuple with price and price type ('lowest' or 'median')
-  - Handles rate limiting with automatic retries
-  - Waits 30 seconds between retries
-
-- update_prices(db_path, collection_filter, max_items, retry_on_rate_limit): 
-  Updates prices in the database
-  - Adds price_type column if needed
-  - Provides detailed summary of updates
-
-## Notes
-- The script adds a 5-second delay between API requests to avoid rate limiting
-- If rate limited, it waits 30 seconds before retrying (up to 3 retries)
-- It tries to get the 'lowest_price' first, then falls back to 'median_price'
-- The price_type column tracks which type of price was stored
-- Prices are stored in USD without the '$' symbol
-- The script stores the timestamp of each price update
-- Steam API has rate limits, so updating many items may take time
-'''

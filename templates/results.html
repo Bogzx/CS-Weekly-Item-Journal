@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CS2 Weekly Drop Analyzer - Results</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #ddd;
+        }
+        .user-nav {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        h1, h2, h3 {
+            color: #333;
+        }
+        .error {
+            background-color: #ffecec;
+            color: #721c24;
+            padding: 10px;
+            margin-bottom: 15px;
+            border-radius: 4px;
+            border: 1px solid #f5c6cb;
+        }
+        .results-container {
+            display: grid;
+            grid-template-columns: 3fr 1fr;
+            gap: 20px;
+        }
+        .item-results {
+            border-right: 1px solid #ddd;
+            padding-right: 20px;
+        }
+        .journal {
+            padding-left: 20px;
+        }
+        .item-box {
+            background-color: #f9f9f9;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        .match-item {
+            background-color: #fff;
+            border: 1px solid #e3e3e3;
+            border-radius: 4px;
+            padding: 10px;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+        }
+        .match-item label {
+            margin-left: 10px;
+            flex-grow: 1;
+        }
+        .match-item:hover {
+            background-color: #f0f0f0;
+        }
+        .match-item.high-confidence {
+            border-left: 5px solid #28a745;
+        }
+        .match-item.medium-confidence {
+            border-left: 5px solid #ffc107;
+        }
+        .match-item.low-confidence {
+            border-left: 5px solid #dc3545;
+        }
+        .match-item.variation-confidence {
+            border-left: 5px solid #6c757d;
+        }
+        .score {
+            font-size: 0.8em;
+            color: #6c757d;
+        }
+        .journal-item {
+            background-color: #e9f7ef;
+            border: 1px solid #d4edda;
+            border-radius: 4px;
+            padding: 10px;
+            margin-bottom: 10px;
+            position: relative;
+        }
+        .journal-item form {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+        }
+        .remove-btn {
+            background-color: transparent;
+            border: none;
+            color: #dc3545;
+            cursor: pointer;
+            font-size: 1.2em;
+        }
+        .no-matches {
+            color: #6c757d;
+            font-style: italic;
+        }
+        .add-btn {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        .add-btn:hover {
+            background-color: #0069d9;
+        }
+        .add-btn:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        .home-btn {
+            margin-top: 20px;
+            display: inline-block;
+            padding: 8px 16px;
+            background-color: #6c757d;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+        }
+        .home-btn:hover {
+            background-color: #5a6268;
+        }
+        .selection-counter {
+            background-color: #e9ecef;
+            padding: 8px;
+            margin-top: 10px;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+        .btn {
+            display: inline-block;
+            padding: 8px 16px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            text-decoration: none;
+        }
+        .btn:hover {
+            background-color: #0069d9;
+        }
+        .btn-outline {
+            background-color: transparent;
+            border: 1px solid #007bff;
+            color: #007bff;
+        }
+        .btn-outline:hover {
+            background-color: #007bff;
+            color: white;
+        }
+        .alert {
+            padding: 10px;
+            margin-bottom: 15px;
+            border-radius: 4px;
+        }
+        .alert-error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .alert-success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .alert-info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .login-prompt {
+            padding: 15px;
+            background-color: #f9f9f9;
+            text-align: center;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border: 1px solid #ddd;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>CS2 Weekly Drop Analyzer - Results</h1>
+            <div class="user-nav">
+                {% if user %}
+                    <span>Welcome, {{ user.username }}!</span>
+                    <a href="{{ url_for('profile') }}" class="btn btn-outline">Profile</a>
+                    <a href="{{ url_for('logout') }}" class="btn">Logout</a>
+                {% else %}
+                    <div class="auth-buttons">
+                        <a href="{{ url_for('login') }}" class="btn btn-outline">Login</a>
+                        <a href="{{ url_for('register') }}" class="btn">Register</a>
+                    </div>
+                {% endif %}
+            </div>
+        </header>
+        
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+        
+        {% if error %}
+        <div class="error">
+            <p>{{ error }}</p>
+        </div>
+        {% endif %}
+        
+        {% if not user %}
+            <div class="login-prompt">
+                <p>Please <a href="{{ url_for('login') }}">log in</a> or <a href="{{ url_for('register') }}">register</a> to save your items permanently.</p>
+            </div>
+        {% endif %}
+        
+        <div class="results-container">
+            <div class="item-results">
+                <h2>Detected Items</h2>
+                
+                {% if item_results %}
+                <p>Select up to 2 items to add to your journal:</p>
+                
+                <form action="{{ url_for('add_to_journal') }}" method="post" id="addItemsForm">
+                    <input type="hidden" name="screenshot_id" value="{{ screenshot_id }}">
+                    
+                    {% for result in item_results %}
+                    <div class="item-box">
+                        <h3>Detected: {{ result.original }}</h3>
+                        {% if result.status == 'found' %}
+                            {% if result.matches %}
+                                {% for match in result.matches %}
+                                <div class="match-item {{ match.confidence }}-confidence">
+                                    <input type="checkbox" name="item_id" value="{{ match.id }}" id="item-{{ match.id }}" class="item-checkbox">
+                                    <label for="item-{{ match.id }}">
+                                        <strong>{{ match.name }}</strong>
+                                        {% if match.price %}
+                                        <span>- ${{ match.price }}</span>
+                                        {% endif %}
+                                        <div class="score">
+                                            Confidence: {{ match.confidence }}
+                                            {% if match.score > 0 %}
+                                            (Score: {{ "%.2f"|format(match.score) }})
+                                            {% endif %}
+                                        </div>
+                                    </label>
+                                </div>
+                                {% endfor %}
+                            {% else %}
+                                <p class="no-matches">No matching items found in database.</p>
+                            {% endif %}
+                        {% elif result.status == 'not_found' %}
+                            <p class="no-matches">No matching items found in database.</p>
+                        {% elif result.status == 'empty' %}
+                            <p class="no-matches">Empty or unrecognizable text detected.</p>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                    
+                    <div class="selection-counter">
+                        <p id="selectionCounter">0 items selected (maximum 2)</p>
+                    </div>
+                    
+                    <button type="submit" class="add-btn" id="addItemsBtn" {% if not user %}disabled data-requires-login="true"{% endif %}>
+                        {% if user %}
+                            Add Selected Items to Journal
+                        {% else %}
+                            Login Required to Save Items
+                        {% endif %}
+                    </button>
+                </form>
+                {% else %}
+                <p>No items were detected in the image.</p>
+                {% endif %}
+                
+                <a href="{{ url_for('index') }}" class="home-btn">Back to Home</a>
+            </div>
+            
+            <div class="journal">
+                <h2>Your Journal</h2>
+                <p>Total Value: ${{ "%.2f"|format(total_value) }}</p>
+                
+                {% if journal %}
+                    {% for item in journal %}
+                    <div class="journal-item">
+                        <strong>{{ item.item_name }}</strong>
+                        {% if item.item_price %}
+                        <p>${{ item.item_price }}</p>
+                        {% endif %}
+                        <form action="{{ url_for('remove_from_journal') }}" method="post">
+                            <input type="hidden" name="journal_id" value="{{ item.id }}">
+                            <button type="submit" class="remove-btn" title="Remove from journal">×</button>
+                        </form>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <p>Your journal is empty. Add items to track them.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Limit selection to max 2 items
+        document.addEventListener('DOMContentLoaded', function() {
+            const checkboxes = document.querySelectorAll('.item-checkbox');
+            const counter = document.getElementById('selectionCounter');
+            const addBtn = document.getElementById('addItemsBtn');
+            
+            // Check if elements exist before trying to use them
+            if (!counter || !addBtn) {
+                console.error("Required elements not found");
+                return;
+            }
+            
+            function updateSelectionCounter() {
+                const selected = document.querySelectorAll('.item-checkbox:checked');
+                if (counter) {
+                    counter.textContent = `${selected.length} items selected (maximum 2)`;
+                }
+                
+                // Disable checkboxes if 2 are already selected
+                if (selected.length >= 2) {
+                    checkboxes.forEach(box => {
+                        if (!box.checked) {
+                            box.disabled = true;
+                        }
+                    });
+                } else {
+                    checkboxes.forEach(box => {
+                        box.disabled = false;
+                    });
+                }
+                
+                // Disable add button if no items selected
+                // The user login status is handled by the data-requires-login attribute
+                if (addBtn) {
+                    if (addBtn.hasAttribute('data-requires-login')) {
+                        // Button will remain disabled for users who aren't logged in
+                        addBtn.disabled = true;
+                    } else {
+                        // For logged-in users, enable only when items are selected
+                        addBtn.disabled = selected.length === 0;
+                    }
+                }
+            }
+            
+            checkboxes.forEach(checkbox => {
+                checkbox.addEventListener('change', updateSelectionCounter);
+            });
+            
+            // Initial update
+            updateSelectionCounter();
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CS2 Weekly Drop Analyzer</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #ddd;
+        }
+        .user-nav {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        h1, h2, h3 {
+            color: #333;
+        }
+        .upload-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+            border: 1px dashed #ddd;
+        }
+        .upload-section p {
+            margin-bottom: 15px;
+        }
+        .drop-zone {
+            border: 2px dashed #ddd;
+            border-radius: 5px;
+            padding: 40px;
+            text-align: center;
+            cursor: pointer;
+            margin-bottom: 20px;
+            transition: all 0.3s;
+        }
+        .drop-zone:hover, .drop-zone.active {
+            border-color: #007bff;
+            background-color: #f0f7ff;
+        }
+        .drop-zone p {
+            margin: 0;
+            font-size: 1.1em;
+            color: #666;
+        }
+        #file-input {
+            display: none;
+        }
+        .or-divider {
+            display: flex;
+            align-items: center;
+            text-align: center;
+            margin: 20px 0;
+            color: #666;
+        }
+        .or-divider:before, .or-divider:after {
+            content: '';
+            flex: 1;
+            border-bottom: 1px solid #ddd;
+        }
+        .or-divider:before {
+            margin-right: 10px;
+        }
+        .or-divider:after {
+            margin-left: 10px;
+        }
+        .paste-area {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            min-height: 100px;
+            margin-bottom: 15px;
+        }
+        .btn {
+            display: inline-block;
+            padding: 10px 15px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            text-decoration: none;
+        }
+        .btn:hover {
+            background-color: #0069d9;
+        }
+        .btn-outline {
+            background-color: transparent;
+            border: 1px solid #007bff;
+            color: #007bff;
+        }
+        .btn-outline:hover {
+            background-color: #007bff;
+            color: white;
+        }
+        .results-container {
+            display: grid;
+            grid-template-columns: 3fr 1fr;
+            gap: 20px;
+        }
+        .journal {
+            padding: 20px;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+        }
+        .journal-item {
+            background-color: #fff;
+            border: 1px solid #e3e3e3;
+            border-radius: 4px;
+            padding: 10px;
+            margin-bottom: 10px;
+            position: relative;
+        }
+        .journal-item form {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+        }
+        .remove-btn {
+            background-color: transparent;
+            border: none;
+            color: #dc3545;
+            cursor: pointer;
+            font-size: 1.2em;
+        }
+        .alert {
+            padding: 10px;
+            margin-bottom: 15px;
+            border-radius: 4px;
+        }
+        .alert-error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .alert-success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .alert-info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .auth-buttons {
+            display: flex;
+            gap: 10px;
+        }
+        .login-prompt {
+            padding: 20px;
+            background-color: #f9f9f9;
+            text-align: center;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .clear-journal {
+            margin-top: 10px;
+            text-align: right;
+        }
+        .journal-empty {
+            font-style: italic;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>CS2 Weekly Drop Analyzer</h1>
+            <div class="user-nav">
+                {% if user %}
+                    <span>Welcome, {{ user.username }}!</span>
+                    <a href="{{ url_for('profile') }}" class="btn btn-outline">Profile</a>
+                    <a href="{{ url_for('logout') }}" class="btn">Logout</a>
+                {% else %}
+                    <div class="auth-buttons">
+                        <a href="{{ url_for('login') }}" class="btn btn-outline">Login</a>
+                        <a href="{{ url_for('register') }}" class="btn">Register</a>
+                    </div>
+                {% endif %}
+            </div>
+        </header>
+        
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+        
+        {% if not user %}
+            <div class="login-prompt">
+                <p>Please <a href="{{ url_for('login') }}">log in</a> or <a href="{{ url_for('register') }}">register</a> to save your items permanently.</p>
+            </div>
+        {% endif %}
+        
+        <div class="upload-section">
+            <h2>Upload Screenshot</h2>
+            <p>Upload a screenshot of your CS2 weekly drops to analyze them:</p>
+            
+            <form action="{{ url_for('upload_file') }}" method="post" enctype="multipart/form-data" id="uploadForm">
+                <!-- File drop zone -->
+                <div class="drop-zone" id="drop-zone">
+                    <p>Drag and drop a screenshot here, or click to browse</p>
+                    <input type="file" name="file" id="file-input" accept="image/*">
+                </div>
+                
+                <div class="or-divider">or</div>
+                
+                <p>Paste a screenshot from clipboard:</p>
+                <!-- Important: Always include contenteditable="true" to capture pastes -->
+                <div class="paste-area" id="paste-area" contenteditable="true">Click here to paste an image (Ctrl+V)</div>
+                <!-- Important: Make sure this hidden input exists and has name="image_data" -->
+                <input type="hidden" name="image_data" id="image-data" value="">
+                
+                <button type="submit" class="btn">Analyze Screenshot</button>
+            </form>
+        </div>
+        
+        <div class="results-container">
+            <div class="instructions">
+                <h2>How It Works</h2>
+                <ol>
+                    <li>Upload or paste a screenshot of your weekly drops from CS2</li>
+                    <li>Our system will detect the items in your screenshot</li>
+                    <li>Select items to add to your journal and track their value</li>
+                    <li>Build a record of all your weekly drops over time</li>
+                </ol>
+                
+                <h3>Tips for Best Results</h3>
+                <ul>
+                    <li>Make sure your screenshot includes the entire weekly drop section</li>
+                    <li>Use high resolution screenshots for better text recognition</li>
+                    <li>For best results, use the Steam screenshot feature (F12)</li>
+                </ul>
+            </div>
+            
+            <div class="journal">
+                <h2>Your Journal</h2>
+                <p>Total Value: ${{ "%.2f"|format(total_value) }}</p>
+                
+                {% if journal %}
+                    {% for item in journal %}
+                    <div class="journal-item">
+                        <strong>{{ item.item_name }}</strong>
+                        {% if item.item_price %}
+                        <p>${{ item.item_price }}</p>
+                        {% endif %}
+                        <form action="{{ url_for('remove_from_journal') }}" method="post">
+                            <input type="hidden" name="journal_id" value="{{ item.id }}">
+                            <button type="submit" class="remove-btn" title="Remove from journal">×</button>
+                        </form>
+                    </div>
+                    {% endfor %}
+                    
+                    {% if user %}
+                    <div class="clear-journal">
+                        <form action="{{ url_for('clear_journal') }}" method="post" onsubmit="return confirm('Are you sure you want to clear your entire journal?');">
+                            <button type="submit" class="btn btn-outline">Clear Journal</button>
+                        </form>
+                    </div>
+                    {% endif %}
+                {% else %}
+                    <p class="journal-empty">Your journal is empty. Upload a screenshot to add items.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // File Drop Zone Functionality
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        
+        dropZone.addEventListener('click', () => {
+            fileInput.click();
+        });
+        
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('active');
+        });
+        
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('active');
+        });
+        
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('active');
+            
+            if (e.dataTransfer.files.length) {
+                fileInput.files = e.dataTransfer.files;
+                // Optional: Add visual feedback that a file was dropped
+                dropZone.innerHTML = `<p>File selected: ${e.dataTransfer.files[0].name}</p>`;
+            }
+        });
+        
+        // Image paste functionality
+        const pasteArea = document.getElementById('paste-area');
+        const imageData = document.getElementById('image-data');
+        const uploadForm = document.getElementById('uploadForm');
+        
+        // Updated image paste functionality 
+        document.addEventListener('DOMContentLoaded', function() {
+        const pasteArea = document.getElementById('paste-area');
+        const imageData = document.getElementById('image-data');
+        const fileInput = document.getElementById('file-input');
+        const uploadForm = document.getElementById('uploadForm');
+        
+        if (pasteArea && imageData && uploadForm) {
+            // Handle paste events on the paste area
+            pasteArea.addEventListener('paste', (e) => {
+                e.preventDefault();
+                
+                if (e.clipboardData && e.clipboardData.items) {
+                    const items = e.clipboardData.items;
+                    let imageFound = false;
+                    
+                    for (let i = 0; i < items.length; i++) {
+                        // Check if the item is an image
+                        if (items[i].type.indexOf('image') !== -1) {
+                            imageFound = true;
+                            const blob = items[i].getAsFile();
+                            const reader = new FileReader();
+                            
+                            reader.onload = (event) => {
+                                // Display the pasted image
+                                pasteArea.innerHTML = '<img src="' + event.target.result + '" style="max-width: 100%; max-height: 300px;">';
+                                // Store the image data in the hidden input
+                                imageData.value = event.target.result;
+                                console.log("Image data set, length:", event.target.result.length);
+                                
+                                // Clear the file input to ensure we use pasted image
+                                if (fileInput) {
+                                    fileInput.value = '';
+                                }
+                            };
+                            
+                            reader.readAsDataURL(blob);
+                            break;
+                        }
+                    }
+                    
+                    if (!imageFound) {
+                        pasteArea.innerHTML = '<p style="color: red;">No image found in clipboard. Please copy an image first.</p>';
+                    }
+                }
+            });
+            
+            // Also capture paste events on the document level
+            document.addEventListener('paste', (e) => {
+                if (document.activeElement !== pasteArea) {
+                    // Only handle pastes outside of specific input fields
+                    if (!['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
+                        pasteArea.focus();
+                        // Manually trigger the paste event on the paste area
+                        setTimeout(() => {
+                            const event = new ClipboardEvent('paste', {
+                                clipboardData: e.clipboardData,
+                                bubbles: true
+                            });
+                            pasteArea.dispatchEvent(event);
+                        }, 0);
+                    }
+                }
+            });
+            
+        // Form validation
+        uploadForm.addEventListener('submit', (e) => {
+            const hasFile = fileInput && fileInput.files.length > 0;
+            const hasImageData = imageData && imageData.value && imageData.value.length > 0;
+            
+            if (!hasFile && !hasImageData) {
+                e.preventDefault();
+                alert('Please upload or paste an image first.');
+                return false;
+            }
+            
+            // If form is using file upload method, make sure to clear image data
+            if (hasFile) {
+                imageData.value = '';
+            }
+            
+            console.log("Form submission: File input has files:", hasFile);
+            console.log("Form submission: Image data has value:", hasImageData);
+            return true;
+        });
+    } else {
+        console.error("Could not find required elements for paste functionality");
+    }
+});
+        
+        // Form validation
+        uploadForm.addEventListener('submit', (e) => {
+            if (fileInput.files.length === 0 && !imageData.value) {
+                e.preventDefault();
+                alert('Please upload or paste an image first.');
+            }
+        });
+    </script>
+</body>
+</html>
