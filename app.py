@@ -3,7 +3,7 @@ import uuid
 import time
 import re
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import wraps
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for, flash, g
 from werkzeug.utils import secure_filename
@@ -12,11 +12,21 @@ from Src.ImageDetector.modified_detect_text import WeeklyDropProcessor
 from Src.ImageDetector.item_matcher import ItemMatcher
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24))  # For session management
+app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24))
+
+# Configure the session to use cookies
 app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max upload
+app.config['MAX_CONTENT_LENGTH'] = 128 * 1024 * 1024  # 16MB max upload
 app.config['DATABASE'] = 'csgo_items.db'
 app.config['MODEL_PATH'] = os.path.join('Models', 'BOX_TRAINED.pt')
+app.config['SESSION_TYPE'] = 'filesystem'
+app.config['SESSION_PERMANENT'] = True
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=120)  # Set default to 30 days
+app.config['SESSION_COOKIE_SECURE'] = True  # Set to False if not using HTTPS
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+
+
 
 # Ensure the upload folder exists
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -417,6 +427,7 @@ def login():
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '')
+        remember = 'remember' in request.form
         
         error = None
         if not username:
@@ -439,6 +450,20 @@ def login():
                 # Login successful
                 session.clear()
                 session['user_id'] = user['id']
+                
+                # Set session to permanent if remember me is checked
+                if remember:
+                    # This makes the session permanent with the lifetime configured in app.config
+                    session.permanent = True
+                else:
+                    # For non-remembered sessions, set a shorter lifetime (e.g., 1 hour)
+                    app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=1)
+                    session.permanent = True
+                    # Reset back to the default for other users
+                    app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=120)
+                
+                # Log the login
+                print(f"User {username} logged in with 'remember me' set to {remember}")
                 
                 # Redirect to next page if specified, otherwise to index
                 next_page = request.args.get('next')
@@ -495,8 +520,12 @@ def upload_file():
         # Generate a unique screenshot ID for this upload
         screenshot_id = str(uuid.uuid4())
         
+        # Debug information
+        print(f"Form data keys: {list(request.form.keys())}")
+        print(f"Files: {list(request.files.keys())}")
+        
         # Handle file upload
-        if 'file' in request.files:
+        if 'file' in request.files and request.files['file'].filename:
             file = request.files['file']
             if file.filename == '':
                 return jsonify({'error': 'No file selected'}), 400
@@ -505,11 +534,14 @@ def upload_file():
             filename = secure_filename(f"{screenshot_id}_{file.filename}")
             filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
             file.save(filepath)
+            print(f"Saved uploaded file to {filepath}")
         
         # Handle pasted image
-        elif 'image_data' in request.form:
+        elif 'image_data' in request.form and request.form['image_data']:
             import base64
             image_data = request.form['image_data']
+            print(f"Received image data of length: {len(image_data)}")
+            
             if not image_data:
                 return jsonify({'error': 'No image data received'}), 400
                 
@@ -524,11 +556,14 @@ def upload_file():
             # Save the image data
             with open(filepath, 'wb') as f:
                 f.write(base64.b64decode(image_data))
+            print(f"Saved pasted image to {filepath}")
         else:
+            print("Neither file nor image data found in the request")
             return jsonify({'error': 'No file or image data provided'}), 400
         
         # Process the image
         item_names = process_image(filepath)
+        print(f"Detected {len(item_names)} items in the image")
         
         # Match items to database
         try:
@@ -557,6 +592,9 @@ def upload_file():
         
     except Exception as e:
         print(f"Error processing upload: {e}")
+        import traceback
+        traceback.print_exc()
+        
         user = get_current_user()
         journal = get_user_journal(user['id']) if user else []
         error_msg = str(e)

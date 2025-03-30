@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - CS2 Weekly Drop Analyzer</title>
+    <title>Renew Session - CS2 Weekly Drop Analyzer</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -76,28 +76,18 @@
             color: #155724;
             border: 1px solid #c3e6cb;
         }
-        .alert-info {
-            background-color: #d1ecf1;
-            color: #0c5460;
-            border: 1px solid #bee5eb;
-        }
-        .footer-links {
-            margin-top: 20px;
+        .session-info {
             text-align: center;
-        }
-        .footer-links a {
-            margin: 0 10px;
-            color: #007bff;
-            text-decoration: none;
-        }
-        .footer-links a:hover {
-            text-decoration: underline;
+            margin-bottom: 20px;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Login to CS2 Weekly Drop Analyzer</h1>
+        <h1>Session Renewal Required</h1>
         
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
@@ -109,27 +99,23 @@
             {% endif %}
         {% endwith %}
         
-        <form method="post" action="{{ url_for('login') }}">
-            <div class="form-group">
-                <label for="username">Username</label>
-                <input type="text" id="username" name="username" required>
-            </div>
+        <div class="session-info">
+            <p>For security reasons, your session has expired.</p>
+            <p>Please enter your password to continue as <strong>{{ username }}</strong>.</p>
+        </div>
+        
+        <form method="post" action="{{ url_for('renew_session') }}">
             <div class="form-group">
                 <label for="password">Password</label>
                 <input type="password" id="password" name="password" required>
             </div>
-            <div class="form-group remember-me">
-                <input type="checkbox" id="remember" name="remember" checked>
-                <label for="remember">Remember me for 120 days</label>
-            </div>
             <div class="form-group">
-                <button type="submit" class="btn btn-block">Log In</button>
+                <button type="submit" class="btn btn-block">Renew Session</button>
             </div>
         </form>
         
-        <div class="footer-links">
-            <a href="{{ url_for('register') }}">Create an account</a>
-            <a href="{{ url_for('index') }}">Back to home</a>
+        <div style="text-align: center; margin-top: 20px;">
+            <a href="{{ url_for('login') }}">Or log in as different user</a>
         </div>
     </div>
 </body>

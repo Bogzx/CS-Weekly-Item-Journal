@@ -52,3 +52,17 @@ body {
     font-weight: bold;
     z-index: 10;
 }
+
+.remember-me {
+    display: flex;
+    align-items: center;
+    margin-bottom: 15px;
+}
+.remember-me input[type="checkbox"] {
+    margin-right: 10px;
+    width: auto;
+}
+.remember-me label {
+    margin-bottom: 0;
+    font-weight: normal;
+}

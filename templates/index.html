@@ -228,6 +228,7 @@
             <p>Upload a screenshot of your CS2 weekly drops to analyze them:</p>
             
             <form action="{{ url_for('upload_file') }}" method="post" enctype="multipart/form-data" id="uploadForm">
+                <!-- File drop zone -->
                 <div class="drop-zone" id="drop-zone">
                     <p>Drag and drop a screenshot here, or click to browse</p>
                     <input type="file" name="file" id="file-input" accept="image/*">
@@ -236,8 +237,10 @@
                 <div class="or-divider">or</div>
                 
                 <p>Paste a screenshot from clipboard:</p>
+                <!-- Important: Always include contenteditable="true" to capture pastes -->
                 <div class="paste-area" id="paste-area" contenteditable="true">Click here to paste an image (Ctrl+V)</div>
-                <input type="hidden" name="image_data" id="image-data">
+                <!-- Important: Make sure this hidden input exists and has name="image_data" -->
+                <input type="hidden" name="image_data" id="image-data" value="">
                 
                 <button type="submit" class="btn">Analyze Screenshot</button>
             </form>
@@ -327,30 +330,95 @@
         const imageData = document.getElementById('image-data');
         const uploadForm = document.getElementById('uploadForm');
         
-        pasteArea.addEventListener('paste', (e) => {
-            e.preventDefault();
-            
-            if (e.clipboardData.items) {
-                const items = e.clipboardData.items;
+        // Updated image paste functionality 
+        document.addEventListener('DOMContentLoaded', function() {
+        const pasteArea = document.getElementById('paste-area');
+        const imageData = document.getElementById('image-data');
+        const fileInput = document.getElementById('file-input');
+        const uploadForm = document.getElementById('uploadForm');
+        
+        if (pasteArea && imageData && uploadForm) {
+            // Handle paste events on the paste area
+            pasteArea.addEventListener('paste', (e) => {
+                e.preventDefault();
                 
-                for (let i = 0; i < items.length; i++) {
-                    if (items[i].type.indexOf('image') !== -1) {
-                        const blob = items[i].getAsFile();
-                        const reader = new FileReader();
-                        
-                        reader.onload = (event) => {
-                            // Display the pasted image
-                            pasteArea.innerHTML = '<img src="' + event.target.result + '" style="max-width: 100%; max-height: 300px;">';
-                            // Store the image data in the hidden input
-                            imageData.value = event.target.result;
-                        };
-                        
-                        reader.readAsDataURL(blob);
-                        break;
+                if (e.clipboardData && e.clipboardData.items) {
+                    const items = e.clipboardData.items;
+                    let imageFound = false;
+                    
+                    for (let i = 0; i < items.length; i++) {
+                        // Check if the item is an image
+                        if (items[i].type.indexOf('image') !== -1) {
+                            imageFound = true;
+                            const blob = items[i].getAsFile();
+                            const reader = new FileReader();
+                            
+                            reader.onload = (event) => {
+                                // Display the pasted image
+                                pasteArea.innerHTML = '<img src="' + event.target.result + '" style="max-width: 100%; max-height: 300px;">';
+                                // Store the image data in the hidden input
+                                imageData.value = event.target.result;
+                                console.log("Image data set, length:", event.target.result.length);
+                                
+                                // Clear the file input to ensure we use pasted image
+                                if (fileInput) {
+                                    fileInput.value = '';
+                                }
+                            };
+                            
+                            reader.readAsDataURL(blob);
+                            break;
+                        }
+                    }
+                    
+                    if (!imageFound) {
+                        pasteArea.innerHTML = '<p style="color: red;">No image found in clipboard. Please copy an image first.</p>';
                     }
                 }
+            });
+            
+            // Also capture paste events on the document level
+            document.addEventListener('paste', (e) => {
+                if (document.activeElement !== pasteArea) {
+                    // Only handle pastes outside of specific input fields
+                    if (!['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
+                        pasteArea.focus();
+                        // Manually trigger the paste event on the paste area
+                        setTimeout(() => {
+                            const event = new ClipboardEvent('paste', {
+                                clipboardData: e.clipboardData,
+                                bubbles: true
+                            });
+                            pasteArea.dispatchEvent(event);
+                        }, 0);
+                    }
+                }
+            });
+            
+        // Form validation
+        uploadForm.addEventListener('submit', (e) => {
+            const hasFile = fileInput && fileInput.files.length > 0;
+            const hasImageData = imageData && imageData.value && imageData.value.length > 0;
+            
+            if (!hasFile && !hasImageData) {
+                e.preventDefault();
+                alert('Please upload or paste an image first.');
+                return false;
             }
+            
+            // If form is using file upload method, make sure to clear image data
+            if (hasFile) {
+                imageData.value = '';
+            }
+            
+            console.log("Form submission: File input has files:", hasFile);
+            console.log("Form submission: Image data has value:", hasImageData);
+            return true;
         });
+    } else {
+        console.error("Could not find required elements for paste functionality");
+    }
+});
         
         // Form validation
         uploadForm.addEventListener('submit', (e) => {
