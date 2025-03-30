@@ -8,6 +8,7 @@ from functools import wraps
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for, flash, g
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.formparser import RequestEntityTooLarge
 from Src.ImageDetector.modified_detect_text import WeeklyDropProcessor
 from Src.ImageDetector.item_matcher import ItemMatcher
 
@@ -16,7 +17,8 @@ app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24))
 
 # Configure the session to use cookies
 app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['MAX_CONTENT_LENGTH'] = 128 * 1024 * 1024  # 16MB max upload
+app.config['MAX_CONTENT_LENGTH'] = 256 * 1024 * 1024  # 256MB max upload (increased from 128MB)
+app.config['MAX_CONTENT_PATH'] = 16 * 1024 * 1024  # 16MB max for form fields
 app.config['DATABASE'] = 'csgo_items.db'
 app.config['MODEL_PATH'] = os.path.join('Models', 'BOX_TRAINED.pt')
 app.config['SESSION_TYPE'] = 'filesystem'
@@ -26,7 +28,8 @@ app.config['SESSION_COOKIE_SECURE'] = True  # Set to False if not using HTTPS
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
-
+# Increase request size limits for Werkzeug
+app.config['MAX_FORM_MEMORY_SIZE'] = 64 * 1024 * 1024  # 64MB for form data
 
 # Ensure the upload folder exists
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -509,6 +512,11 @@ def profile():
 def upload_file():
     """Handle file upload or pasted image."""
     try:
+        # Handle RequestEntityTooLarge exception
+        # This will catch the 413 error before it becomes an HTTP response
+        if request.content_length and request.content_length > app.config['MAX_CONTENT_LENGTH']:
+            raise RequestEntityTooLarge("The uploaded file is too large. Maximum size is 256MB.")
+            
         # Check if cleanup is needed
         cleanup_uploads()
         
@@ -538,25 +546,65 @@ def upload_file():
         
         # Handle pasted image
         elif 'image_data' in request.form and request.form['image_data']:
-            import base64
-            image_data = request.form['image_data']
-            print(f"Received image data of length: {len(image_data)}")
-            
-            if not image_data:
-                return jsonify({'error': 'No image data received'}), 400
+            try:
+                import base64
+                from io import BytesIO
+                from PIL import Image
                 
-            # Strip the Data URL header if it exists
-            if 'data:image' in image_data:
-                image_data = image_data.split(',')[1]
+                image_data = request.form['image_data']
+                print(f"Received image data of length: {len(image_data)}")
                 
-            # Generate a unique filename for the pasted image
-            filename = f"{screenshot_id}.png"
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                if not image_data:
+                    return jsonify({'error': 'No image data received'}), 400
+                    
+                # Strip the Data URL header if it exists
+                if 'data:image' in image_data:
+                    # Get the image format from the header
+                    image_format = image_data.split(';')[0].split('/')[1]
+                    image_data = image_data.split(',')[1]
+                else:
+                    image_format = 'png'  # Default format
+                
+                # Generate a unique filename for the pasted image
+                filename = f"{screenshot_id}.{image_format}"
+                filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                
+                # First try to decode and optimize the image before saving
+                try:
+                    # Decode base64 to binary data
+                    binary_data = base64.b64decode(image_data)
+                    
+                    # Open image with PIL
+                    img = Image.open(BytesIO(binary_data))
+                    
+                    # Resize if the image is very large
+                    max_dimension = 2048  # Set a reasonable max dimension
+                    if img.width > max_dimension or img.height > max_dimension:
+                        # Calculate new dimensions while preserving aspect ratio
+                        if img.width > img.height:
+                            new_width = max_dimension
+                            new_height = int(img.height * (max_dimension / img.width))
+                        else:
+                            new_height = max_dimension
+                            new_width = int(img.width * (max_dimension / img.height))
+                            
+                        img = img.resize((new_width, new_height), Image.LANCZOS)
+                        print(f"Resized image to {new_width}x{new_height}")
+                    
+                    # Save the optimized image
+                    img.save(filepath, optimize=True, quality=85)
+                    print(f"Saved optimized pasted image to {filepath}")
+                    
+                except Exception as img_error:
+                    print(f"Error optimizing image: {img_error}, falling back to direct save")
+                    # Fall back to direct save if optimization fails
+                    with open(filepath, 'wb') as f:
+                        f.write(binary_data)
+                    print(f"Saved pasted image to {filepath}")
             
-            # Save the image data
-            with open(filepath, 'wb') as f:
-                f.write(base64.b64decode(image_data))
-            print(f"Saved pasted image to {filepath}")
+            except Exception as paste_error:
+                print(f"Error processing pasted image: {paste_error}")
+                return jsonify({'error': f'Error processing pasted image: {str(paste_error)}'}), 400
         else:
             print("Neither file nor image data found in the request")
             return jsonify({'error': 'No file or image data provided'}), 400
@@ -731,6 +779,21 @@ def clear_journal():
         conn.rollback()
         flash(f"Error clearing journal: {str(e)}", 'error')
     
+    return redirect(url_for('index'))
+
+# Custom error handlers
+@app.errorhandler(RequestEntityTooLarge)
+def handle_request_entity_too_large(error):
+    """Handle 413 Request Entity Too Large error."""
+    print(f"413 Error: {error}")
+    flash('The image you uploaded is too large. Please reduce its size or upload a different image.', 'error')
+    return redirect(url_for('index'))
+
+@app.errorhandler(413)
+def request_entity_too_large(error):
+    """Handle 413 Request Entity Too Large error (HTTP version)."""
+    print(f"HTTP 413 Error: {error}")
+    flash('The image you uploaded is too large. Please reduce its size or upload a different image.', 'error')
     return redirect(url_for('index'))
 
 if __name__ == '__main__':
