@@ -14,6 +14,13 @@ from Src.ImageDetector.item_matcher import ItemMatcher
 
 from dotenv import load_dotenv
 
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
+import json
+import subprocess
+import sys
+import logging
+
 # Load variables from .env file
 load_dotenv()
 
@@ -801,5 +808,131 @@ def request_entity_too_large(error):
     flash('The image you uploaded is too large. Please reduce its size or upload a different image.', 'error')
     return redirect(url_for('index'))
 
+
+def update_prices_job():
+    """
+    Job that runs daily to update prices for specific collections/items.
+    Runs in a separate process to avoid database locking issues.
+    """
+    app.logger.info("Running scheduled price update job")
+    
+    try:
+        # Path to the configuration file
+        config_path = os.environ.get('PRICE_UPDATE_CONFIG', 'price_update_config.json')
+        
+        if not os.path.exists(config_path):
+            app.logger.warning(f"Price update configuration file not found: {config_path}")
+            return
+            
+        # Read configuration
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+            
+        collections = config.get('collections', [])
+        max_items = config.get('max_items', 100)
+        retry_on_rate_limit = config.get('retry_on_rate_limit', True)
+        all_cases_graffiti = config.get('all_cases_graffiti', False)
+        
+        app.logger.info(f"Updating prices for collections: {collections}, max items: {max_items}")
+        
+        # Run update_price.py as a separate process to avoid database locking
+        db_path = app.config['DATABASE']
+        
+        # Build command for subprocess
+        cmd = [
+            sys.executable,  # Python executable
+            'src/DB/update_price.py',
+            '--db', db_path
+        ]
+        
+        # Add collections if specified
+        if collections:
+            cmd.append('--collections')
+            cmd.extend(collections)
+            
+        # Add max items if specified
+        if max_items:
+            cmd.append('--max')
+            cmd.append(str(max_items))
+            
+        # Add no-retry flag if retry is disabled
+        if not retry_on_rate_limit:
+            cmd.append('--no-retry')
+            
+        # Add cases and graffiti flag if specified
+        if all_cases_graffiti:
+            cmd.append('--all-cases-graffiti')
+        
+        app.logger.info(f"Executing command: {' '.join(cmd)}")
+        
+        # Execute the command in a separate process
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        if result.returncode == 0:
+            app.logger.info(f"Price update completed: {result.stdout}")
+        else:
+            app.logger.error(f"Price update failed: {result.stderr}")
+        
+        
+    except Exception as e:
+        app.logger.error(f"Error running price update job: {e}")
+        import traceback
+        app.logger.error(traceback.format_exc())
+
+# At the module level (outside any function)
+scheduler = None
+
+def init_scheduler():
+    """Initialize and start the scheduler for periodic tasks."""
+    global scheduler
+    
+    # If scheduler is already running, shut it down first
+    if scheduler is not None and scheduler.running:
+        app.logger.info("Shutting down existing scheduler...")
+        scheduler.shutdown(wait=False)
+    
+    scheduler = BackgroundScheduler()
+    
+    # Schedule the regular job
+    scheduler.add_job(
+        update_prices_job,
+        trigger=CronTrigger(hour=0, minute=0, timezone='UTC'),
+        id='price_update_job',
+        name='Daily price update',
+        replace_existing=True
+    )
+    from datetime import datetime
+    from apscheduler.triggers.date import DateTrigger
+    
+    scheduler.add_job(
+        update_prices_job,
+        trigger=DateTrigger(run_date=datetime.now()),
+        id='price_update_test_job',
+        name='Immediate test update'
+    )
+    
+    # Start the scheduler
+    scheduler.start()
+    app.logger.info("Scheduler started, price updates will run daily at 00:00 UTC")
+    
+    # Register shutdown function 
+    import atexit
+    atexit.register(shutdown_scheduler)
+    
+def shutdown_scheduler():
+    """Safely shut down the scheduler."""
+    global scheduler
+    if scheduler is not None and scheduler.running:
+        app.logger.info("Shutting down scheduler...")
+        try:
+            scheduler.shutdown(wait=False)
+            app.logger.info("Scheduler successfully shut down")
+        except Exception as e:
+            app.logger.error(f"Error shutting down scheduler: {e}")
+
 if __name__ == '__main__':
-    app.run(debug=True)
+
+
+    # Initialize the scheduler for daily price updates
+    init_scheduler()
+    app.run(debug=True,use_reloader=False)

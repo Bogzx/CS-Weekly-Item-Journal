@@ -16,3 +16,6 @@ requests==2.31.0
 
 # Configuration
 python-dotenv==1.0.0
+
+# Add to your existing requirements.txt
+APScheduler==3.10.1
