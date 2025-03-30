@@ -3,13 +3,16 @@ import uuid
 import time
 import re
 import sqlite3
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for
+from datetime import datetime
+from functools import wraps
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for, flash, g
 from werkzeug.utils import secure_filename
+from werkzeug.security import generate_password_hash, check_password_hash
 from Src.ImageDetector.modified_detect_text import WeeklyDropProcessor
 from Src.ImageDetector.item_matcher import ItemMatcher
 
 app = Flask(__name__)
-app.secret_key = os.urandom(24)  # For session management
+app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24))  # For session management
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max upload
 app.config['DATABASE'] = 'csgo_items.db'
@@ -24,32 +27,110 @@ processor = WeeklyDropProcessor(app.config['MODEL_PATH'])
 # Initialize the item matcher
 matcher = ItemMatcher(app.config['DATABASE'])
 
-# Check if price_type column exists in the database and add it if needed
+# Database functions
+def get_db():
+    """Get a connection to the SQLite database."""
+    if 'db' not in g:
+        g.db = sqlite3.connect(app.config['DATABASE'])
+        # Set row_factory to return dictionaries instead of Row objects
+        g.db.row_factory = lambda cursor, row: {
+            column[0]: row[idx] for idx, column in enumerate(cursor.description)
+        }
+    return g.db
+
+@app.teardown_appcontext
+def close_db(error):
+    """Close database connection at the end of request."""
+    if 'db' in g:
+        g.db.close()
+
 def initialize_database():
-    """Check if the database has all required columns and add them if needed."""
+    """Check if the database has all required tables and columns."""
     conn = sqlite3.connect(app.config['DATABASE'])
     cursor = conn.cursor()
+    
+    # Check and add price_type column if needed
     try:
-        # Try to add price_type column if it doesn't exist
         cursor.execute("ALTER TABLE items ADD COLUMN price_type TEXT")
         print("Added price_type column to items table")
     except sqlite3.OperationalError:
         # Column already exists, which is fine
         pass
+    
+    # Create users table if it doesn't exist
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT NOT NULL UNIQUE,
+        email TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    ''')
+    
+    # Create user_journals table if it doesn't exist
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS user_journals (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        item_id INTEGER NOT NULL,
+        item_name TEXT NOT NULL,
+        item_collection TEXT,
+        item_price REAL,
+        item_price_type TEXT,
+        item_type TEXT,
+        screenshot_id TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+    )
+    ''')
+    
+    # Add indexes for better performance
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_user_journals_user_id ON user_journals (user_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_user_journals_item_id ON user_journals (item_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_user_journals_screenshot_id ON user_journals (screenshot_id)")
+    
     conn.commit()
     conn.close()
+    print("Database initialized successfully.")
 
 # Initialize the database
 initialize_database()
 
-def get_db_connection():
-    """Get a connection to the SQLite database."""
-    conn = sqlite3.connect(app.config['DATABASE'])
-    # Set row_factory to return dictionaries instead of Row objects
-    conn.row_factory = lambda cursor, row: {
-        column[0]: row[idx] for idx, column in enumerate(cursor.description)
-    }
-    return conn
+# Authentication functions
+def login_required(f):
+    """Decorator to require login for certain routes."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            flash('Please log in to access this page.', 'error')
+            return redirect(url_for('login', next=request.url))
+        return f(*args, **kwargs)
+    return decorated_function
+
+def get_current_user():
+    """Get current user from session."""
+    if 'user_id' in session:
+        conn = get_db()
+        user = conn.execute(
+            "SELECT id, username, email FROM users WHERE id = ?", 
+            (session['user_id'],)
+        ).fetchone()
+        return user
+    return None
+
+def get_user_journal(user_id):
+    """Get a user's journal items from the database."""
+    conn = get_db()
+    journal_items = conn.execute(
+        "SELECT * FROM user_journals WHERE user_id = ? ORDER BY created_at DESC",
+        (user_id,)
+    ).fetchall()
+    return journal_items
+
+def get_journal_total(journal_items):
+    """Calculate total value of items in a journal."""
+    return sum(float(item.get('item_price', 0) or 0) for item in journal_items)
 
 def cleanup_uploads():
     """Remove old uploads to prevent disk filling up."""
@@ -259,24 +340,157 @@ def match_items_in_database(item_names):
     
     return results
 
+# Routes
 @app.route('/')
 def index():
     """Main page with upload form."""
-    # Initialize the journal in session if it doesn't exist
-    if 'journal' not in session:
-        session['journal'] = []
+    # Get current user if logged in
+    user = get_current_user()
+    journal = []
+    total_value = 0
     
-    # Calculate total value of items in journal
-    total_value = sum(float(item.get('price', 0) or 0) for item in session['journal'])
+    if user:
+        # Get user's journal from database
+        journal = get_user_journal(user['id'])
+        total_value = get_journal_total(journal)
     
-    return render_template('index.html', journal=session['journal'], total_value=total_value)
+    return render_template(
+        'index.html', 
+        user=user,
+        journal=journal, 
+        total_value=total_value
+    )
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    """User registration page."""
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        email = request.form.get('email', '').strip()
+        password = request.form.get('password', '')
+        confirm = request.form.get('confirm_password', '')
+        
+        # Validate form data
+        error = None
+        if not username:
+            error = 'Username is required.'
+        elif not email:
+            error = 'Email is required.'
+        elif not password:
+            error = 'Password is required.'
+        elif password != confirm:
+            error = 'Passwords do not match.'
+            
+        if error is None:
+            # Check if username or email already exists
+            conn = get_db()
+            existing_user = conn.execute(
+                'SELECT id FROM users WHERE username = ? OR email = ?',
+                (username, email)
+            ).fetchone()
+            
+            if existing_user:
+                error = 'Username or email is already taken.'
+            else:
+                # Hash password and create user
+                password_hash = generate_password_hash(password)
+                try:
+                    conn.execute(
+                        'INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)',
+                        (username, email, password_hash)
+                    )
+                    conn.commit()
+                    flash('Registration successful! You can now log in.', 'success')
+                    return redirect(url_for('login'))
+                except Exception as e:
+                    conn.rollback()
+                    error = f"Error creating user: {str(e)}"
+        
+        if error:
+            flash(error, 'error')
+    
+    return render_template('register.html')
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    """User login page."""
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+        
+        error = None
+        if not username:
+            error = 'Username is required.'
+        elif not password:
+            error = 'Password is required.'
+            
+        if error is None:
+            conn = get_db()
+            user = conn.execute(
+                'SELECT id, username, password_hash FROM users WHERE username = ?',
+                (username,)
+            ).fetchone()
+            
+            if user is None:
+                error = 'Invalid username.'
+            elif not check_password_hash(user['password_hash'], password):
+                error = 'Invalid password.'
+            else:
+                # Login successful
+                session.clear()
+                session['user_id'] = user['id']
+                
+                # Redirect to next page if specified, otherwise to index
+                next_page = request.args.get('next')
+                if next_page and next_page.startswith('/'):  # Ensure it's a relative URL
+                    return redirect(next_page)
+                return redirect(url_for('index'))
+        
+        if error:
+            flash(error, 'error')
+    
+    return render_template('login.html')
+
+@app.route('/logout')
+def logout():
+    """Log out the current user."""
+    session.clear()
+    flash('You have been logged out.', 'info')
+    return redirect(url_for('index'))
+
+@app.route('/profile')
+@login_required
+def profile():
+    """User profile page."""
+    user = get_current_user()
+    journal = get_user_journal(user['id'])
+    
+    # Process dates for display
+    for item in journal:
+        if 'created_at' in item:
+            item['created_at_display'] = str(item['created_at'])
+    
+    total_value = get_journal_total(journal)
+    
+    return render_template(
+        'profile.html',
+        user=user,
+        journal=journal,
+        total_value=total_value
+    )
 
 @app.route('/upload', methods=['POST'])
+@login_required
 def upload_file():
     """Handle file upload or pasted image."""
     try:
         # Check if cleanup is needed
         cleanup_uploads()
+        
+        # Get current user
+        user = get_current_user()
+        if not user:
+            return redirect(url_for('login'))
         
         # Generate a unique screenshot ID for this upload
         screenshot_id = str(uuid.uuid4())
@@ -326,8 +540,9 @@ def upload_file():
                 error=f"Error processing items: {e}",
                 screenshot_id=screenshot_id,
                 item_results=[],
-                journal=session.get('journal', []),
-                total_value=sum(float(item.get('price', 0) or 0) for item in session.get('journal', []))
+                user=user,
+                journal=get_user_journal(user['id']),
+                total_value=get_journal_total(get_user_journal(user['id']))
             )
         
         # Return the results
@@ -335,26 +550,39 @@ def upload_file():
             'results.html', 
             screenshot_id=screenshot_id,
             item_results=matched_items,
-            journal=session.get('journal', []),
-            total_value=sum(float(item.get('price', 0) or 0) for item in session.get('journal', []))
+            user=user,
+            journal=get_user_journal(user['id']),
+            total_value=get_journal_total(get_user_journal(user['id']))
         )
         
     except Exception as e:
         print(f"Error processing upload: {e}")
+        user = get_current_user()
+        journal = get_user_journal(user['id']) if user else []
         error_msg = str(e)
         return render_template(
             'results.html', 
             error=f"Error processing the image: {error_msg}",
+            screenshot_id="",
             item_results=[],
-            journal=session.get('journal', []),
-            total_value=sum(float(item.get('price', 0) or 0) for item in session.get('journal', []))
+            user=user,
+            journal=journal,
+            total_value=get_journal_total(journal)
         )
 
 @app.route('/add_to_journal', methods=['POST'])
+@login_required
 def add_to_journal():
     """Add selected items to the user's journal."""
+    # Get the current user
+    user = get_current_user()
+    if not user:
+        return redirect(url_for('login'))
+    
     # Get the item IDs - this can be a single ID or multiple IDs (up to 2)
     item_ids = request.form.getlist('item_id')
+    screenshot_id = request.form.get('screenshot_id', str(uuid.uuid4()))
+    
     if not item_ids:
         return redirect(url_for('index'))
     
@@ -362,8 +590,7 @@ def add_to_journal():
     item_ids = item_ids[:2]
     
     try:
-        conn = get_db_connection()
-        journal = session.get('journal', [])
+        conn = get_db()
         
         for item_id in item_ids:
             cur = conn.execute(
@@ -376,41 +603,95 @@ def add_to_journal():
                 # Ensure item is a dictionary
                 item_dict = ensure_dict(item)
                 
-                # Create a journal item with safe access
-                journal_item = {
-                    'id': item_dict.get('id'),
-                    'name': item_dict.get('name', 'Unknown Item'),
-                    'collection': item_dict.get('collection', ''),
-                    'price': item_dict.get('price'),
-                    'price_type': item_dict.get('price_type', 'unknown'),
-                    'item_type': item_dict.get('item_type', ''),
-                    'timestamp': time.time(),
-                    'screenshot_id': request.form.get('screenshot_id', str(uuid.uuid4()))  # Track which screenshot this came from
-                }
-                
-                # Add to journal in session
-                journal.append(journal_item)
+                # Insert into user_journals table
+                conn.execute(
+                    """
+                    INSERT INTO user_journals (
+                        user_id, item_id, item_name, item_collection, 
+                        item_price, item_price_type, item_type, screenshot_id
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        user['id'],
+                        item_dict.get('id'),
+                        item_dict.get('name', 'Unknown Item'),
+                        item_dict.get('collection', ''),
+                        item_dict.get('price'),
+                        item_dict.get('price_type', 'unknown'),
+                        item_dict.get('item_type', ''),
+                        screenshot_id
+                    )
+                )
         
-        conn.close()
-        session['journal'] = journal
+        conn.commit()
+        flash('Items added to your journal successfully!', 'success')
         
     except Exception as e:
         print(f"Error adding items to journal: {e}")
+        conn.rollback()
+        flash(f"Error adding items to journal: {str(e)}", 'error')
     
     return redirect(url_for('index'))
 
 @app.route('/remove_from_journal', methods=['POST'])
+@login_required
 def remove_from_journal():
     """Remove an item from the journal."""
-    item_id = request.form.get('item_id')
-    timestamp = request.form.get('timestamp')
+    user = get_current_user()
+    if not user:
+        return redirect(url_for('login'))
     
-    if not item_id or not timestamp:
+    journal_id = request.form.get('journal_id')
+    
+    if not journal_id:
         return redirect(url_for('index'))
     
-    journal = session.get('journal', [])
-    journal = [item for item in journal if not (str(item.get('id')) == item_id and str(item.get('timestamp')) == timestamp)]
-    session['journal'] = journal
+    try:
+        conn = get_db()
+        
+        # Verify the journal item belongs to this user
+        journal_item = conn.execute(
+            "SELECT id FROM user_journals WHERE id = ? AND user_id = ?",
+            (journal_id, user['id'])
+        ).fetchone()
+        
+        if journal_item:
+            conn.execute(
+                "DELETE FROM user_journals WHERE id = ?",
+                (journal_id,)
+            )
+            conn.commit()
+            flash('Item removed from your journal.', 'success')
+        else:
+            flash('Journal item not found or not authorized.', 'error')
+        
+    except Exception as e:
+        print(f"Error removing item from journal: {e}")
+        conn.rollback()
+        flash(f"Error removing item: {str(e)}", 'error')
+    
+    return redirect(url_for('index'))
+
+@app.route('/clear_journal', methods=['POST'])
+@login_required
+def clear_journal():
+    """Clear all items from the user's journal."""
+    user = get_current_user()
+    if not user:
+        return redirect(url_for('login'))
+    
+    try:
+        conn = get_db()
+        conn.execute(
+            "DELETE FROM user_journals WHERE user_id = ?",
+            (user['id'],)
+        )
+        conn.commit()
+        flash('Your journal has been cleared.', 'success')
+    except Exception as e:
+        print(f"Error clearing journal: {e}")
+        conn.rollback()
+        flash(f"Error clearing journal: {str(e)}", 'error')
     
     return redirect(url_for('index'))
 

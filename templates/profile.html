@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Profile - CS2 Weekly Drop Analyzer</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #ddd;
+        }
+        h1, h2, h3 {
+            color: #333;
+        }
+        .btn {
+            display: inline-block;
+            padding: 10px 15px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            text-decoration: none;
+        }
+        .btn:hover {
+            background-color: #0069d9;
+        }
+        .btn-outline {
+            background-color: transparent;
+            border: 1px solid #007bff;
+            color: #007bff;
+        }
+        .btn-outline:hover {
+            background-color: #007bff;
+            color: white;
+        }
+        .profile-section {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 30px;
+        }
+        .user-info {
+            padding: 20px;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+        }
+        .user-info h2 {
+            margin-top: 0;
+        }
+        .journal {
+            padding: 20px;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+        }
+        .journal-item {
+            background-color: #fff;
+            border: 1px solid #e3e3e3;
+            border-radius: 4px;
+            padding: 10px;
+            margin-bottom: 10px;
+            position: relative;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .journal-item-info {
+            flex-grow: 1;
+        }
+        .journal-item form {
+            margin-left: 10px;
+        }
+        .remove-btn {
+            background-color: transparent;
+            border: none;
+            color: #dc3545;
+            cursor: pointer;
+            font-size: 1.2em;
+        }
+        .journal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        .alert {
+            padding: 10px;
+            margin-bottom: 15px;
+            border-radius: 4px;
+        }
+        .alert-error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .alert-success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .alert-info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .journal-empty {
+            font-style: italic;
+            color: #666;
+            text-align: center;
+            padding: 20px;
+        }
+        .stats {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #fff;
+            border-radius: 4px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+        }
+        .stat-item {
+            padding: 10px;
+            background-color: #f0f7ff;
+            border-radius: 4px;
+        }
+        .stat-value {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #007bff;
+        }
+        .pagination {
+            display: flex;
+            justify-content: center;
+            margin-top: 20px;
+        }
+        .pagination a {
+            padding: 8px 12px;
+            margin: 0 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            text-decoration: none;
+            color: #007bff;
+        }
+        .pagination a.active {
+            background-color: #007bff;
+            color: white;
+            border-color: #007bff;
+        }
+        .journal-date {
+            font-size: 0.85em;
+            color: #6c757d;
+            margin-top: 3px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>User Profile</h1>
+            <div>
+                <a href="{{ url_for('index') }}" class="btn btn-outline">Home</a>
+                <a href="{{ url_for('logout') }}" class="btn">Logout</a>
+            </div>
+        </header>
+        
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+        
+        <div class="profile-section">
+            <div class="user-info">
+                <h2>{{ user.username }}</h2>
+                <p>Email: {{ user.email }}</p>
+                
+                <div class="stats">
+                    <h3>Stats</h3>
+                    <div class="stats-grid">
+                        <div class="stat-item">
+                            <div class="stat-label">Total Items</div>
+                            <div class="stat-value">{{ journal|length }}</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">Total Value</div>
+                            <div class="stat-value">${{ "%.2f"|format(total_value) }}</div>
+                        </div>
+                        <!-- Additional stats could go here -->
+                    </div>
+                </div>
+            </div>
+            
+            <div class="journal">
+                <div class="journal-header">
+                    <h2>Your Journal History</h2>
+                    <form action="{{ url_for('clear_journal') }}" method="post" onsubmit="return confirm('Are you sure you want to clear your entire journal?');">
+                        <button type="submit" class="btn btn-outline">Clear Journal</button>
+                    </form>
+                </div>
+                
+                {% if journal %}
+                    {% for item in journal %}
+                    <div class="journal-item">
+                        <div class="journal-item-info">
+                            <strong>{{ item.item_name }}</strong>
+                            {% if item.item_collection %}
+                            <div>From: {{ item.item_collection }}</div>
+                            {% endif %}
+                            {% if item.item_price %}
+                            <div>${{ item.item_price }}</div>
+                            {% endif %}
+                            <div class="journal-date">
+                                Added on {{ item.created_at_display }}
+                            </div>
+                            </div>
+                        </div>
+                        <form action="{{ url_for('remove_from_journal') }}" method="post">
+                            <input type="hidden" name="journal_id" value="{{ item.id }}">
+                            <button type="submit" class="remove-btn" title="Remove from journal">×</button>
+                        </form>
+                    </div>
+                    {% endfor %}
+                    
+                    <!-- Pagination (for future use) -->
+                    <!--
+                    <div class="pagination">
+                        <a href="#">&laquo;</a>
+                        <a href="#" class="active">1</a>
+                        <a href="#">2</a>
+                        <a href="#">3</a>
+                        <a href="#">&raquo;</a>
+                    </div>
+                    -->
+                {% else %}
+                    <div class="journal-empty">
+                        <p>Your journal is empty. Upload a screenshot on the home page to add items.</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</body>
+</html>
