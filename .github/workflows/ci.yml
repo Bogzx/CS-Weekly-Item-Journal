@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # Proves `pip install -r requirements.txt` actually resolves on every
+  # supported interpreter, and runs the tests that do not need the model.
+  #
+  # This job is the direct guard against the blockers this repo shipped with:
+  # numpy==1.24.4 had no cp312/cp313 wheels so the install itself failed, and
+  # ultralytics==8.0.196 could not unpickle the YOLO11 weights.
+  install-and-test:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.12', '3.13']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies (CPU torch)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt \
+            --extra-index-url https://download.pytorch.org/whl/cpu
+          pip install pytest
+
+      - name: Show resolved versions
+        run: pip freeze
+
+      - name: Import the app without loading the model
+        # app.py must import cleanly. The processor is lazy (see
+        # get_processor()), so this stays fast and still catches syntax
+        # errors, bad imports and Flask config mistakes.
+        env:
+          DATABASE_PATH: ci_items.db
+          SECRET_KEY: ci-not-a-real-key
+        run: python -c "import app; print('app imported OK'); print(sorted(r.rule for r in app.app.url_map.iter_rules()))"
+
+      - name: Fast tests
+        env:
+          DATABASE_PATH: ci_items.db
+          SECRET_KEY: ci-not-a-real-key
+        run: pytest -q -m "not slow"
+
+  # The golden-image regression: runs the real YOLO + EasyOCR pipeline against a
+  # committed screenshot. Kept to a single interpreter because the first run
+  # downloads ~100 MB of EasyOCR weights.
+  golden-image:
+    name: Golden image pipeline
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dependencies (CPU torch)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt \
+            --extra-index-url https://download.pytorch.org/whl/cpu
+          pip install pytest
+
+      - name: Cache EasyOCR models
+        uses: actions/cache@v4
+        with:
+          path: ~/.EasyOCR
+          key: easyocr-models-v1
+
+      - name: Run golden-image test
+        env:
+          DATABASE_PATH: ci_items.db
+          SECRET_KEY: ci-not-a-real-key
+        run: pytest -q -m slow
