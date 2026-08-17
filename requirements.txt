@@ -1,21 +1,55 @@
-# Web Framework
-Flask==2.3.3
-Werkzeug==2.3.7
+# CS-Weekly-Item-Journal runtime dependencies
+#
+# Supported: Python 3.11, 3.12, 3.13
+#
+# NOTE ON torch: `pip install -r requirements.txt` pulls the default PyPI
+# torch build. On Linux that is the CUDA build (~2.5 GB). This app only ever
+# runs inference on small crops, so the CPU build is plenty and ~200 MB:
+#
+#   pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
+#
+# See README.md "Installation" for the full walkthrough.
+#
+# Last verified working set (Python 3.12.7, Windows, CPU):
+#   torch 2.13.0+cpu   torchvision 0.28.0   ultralytics 8.4.121
+#   easyocr 1.7.2      numpy 2.5.2          opencv-python 4.14.0.94
+#   Flask 3.1.3        Werkzeug 3.1.8       APScheduler 3.11.3
+#   Pillow 12.3.0      requests 2.34.2      python-dotenv 1.2.3
+# Models/BOX_TRAINED.pt loads and the golden-image test passes on that set.
 
-# Image Processing & ML
-ultralytics==8.0.196
-easyocr==1.7.1
-opencv-python==4.8.1.78
-numpy==1.24.4
-Pillow==10.0.1
-matplotlib==3.8.0
-pytesseract==0.3.10
+# --- Web framework ---
+Flask>=3.0,<4
+Werkzeug>=3.0,<4
 
-# Data Processing
-requests==2.31.0
+# --- Deep learning runtime ---
+# torch is a hard requirement of BOTH ultralytics and easyocr. It was missing
+# from this file entirely, which let pip resolve an arbitrary build against a
+# pinned-old numpy. It is now explicit.
+torch>=2.2
+torchvision>=0.17
 
-# Configuration
-python-dotenv==1.0.0
+# --- Image processing & ML ---
+# ultralytics MUST be >=8.3.94. Models/BOX_TRAINED.pt is a YOLO11s checkpoint
+# and its pickle references YOLO11-only modules (C3k2, C2PSA). Anything older
+# -- the previous pin was 8.0.196, from Sept 2023 -- dies with
+# "AttributeError: Can't get attribute 'C3k2'" while unpickling. That used to
+# be a hard startup crash because the processor was built at import time; it is
+# now constructed lazily (app.py get_processor()), but the pin is still the
+# thing that makes detection work at all.
+ultralytics>=8.3.94
+easyocr>=1.7.2
+opencv-python>=4.9,<5
 
-# Add to your existing requirements.txt
-APScheduler==3.10.1
+# numpy 1.24.4 shipped wheels for cp38-cp311 only, so pip could not even
+# install it on Python 3.12/3.13. 1.26 is the first release with cp312 wheels.
+numpy>=1.26,<3
+Pillow>=10.2
+
+# --- HTTP ---
+requests>=2.31
+
+# --- Configuration ---
+python-dotenv>=1.0
+
+# --- Scheduling ---
+APScheduler>=3.10,<4
