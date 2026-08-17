@@ -196,6 +196,7 @@
             <div class="user-nav">
                 {% if user %}
                     <span>Welcome, {{ user.username }}!</span>
+                    <a href="{{ url_for('history') }}" class="btn btn-outline">History</a>
                     <a href="{{ url_for('profile') }}" class="btn btn-outline">Profile</a>
                     <a href="{{ url_for('logout') }}" class="btn">Logout</a>
                 {% else %}

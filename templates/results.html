@@ -206,6 +206,58 @@
             margin-bottom: 20px;
             border: 1px solid #ddd;
         }
+        /* --- Highest-value recommendation --- */
+        .recommendation-banner {
+            background-color: #fff8e1;
+            border: 1px solid #ffe082;
+            border-left: 5px solid #ff9800;
+            border-radius: 4px;
+            padding: 12px 15px;
+            margin-bottom: 20px;
+        }
+        .recommendation-banner .rec-title {
+            font-weight: bold;
+            color: #8a5300;
+            margin: 0 0 4px 0;
+        }
+        .recommendation-banner .rec-item {
+            font-size: 1.1em;
+        }
+        .recommendation-banner .rec-price {
+            font-weight: bold;
+            color: #1b7a34;
+        }
+        .item-box.recommended {
+            border-color: #ff9800;
+            background-color: #fffdf6;
+        }
+        .match-item.recommended {
+            background-color: #fff8e1;
+            border-color: #ffcc80;
+            box-shadow: 0 0 0 2px #ffe082;
+        }
+        .rec-badge {
+            display: inline-block;
+            background-color: #ff9800;
+            color: #fff;
+            font-size: 0.75em;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            padding: 2px 7px;
+            border-radius: 10px;
+            margin-left: 8px;
+            vertical-align: middle;
+        }
+        .price-tag {
+            font-weight: bold;
+            color: #1b7a34;
+        }
+        .price-unknown {
+            color: #6c757d;
+            font-style: italic;
+            font-size: 0.9em;
+        }
     </style>
 </head>
 <body>
@@ -215,6 +267,7 @@
             <div class="user-nav">
                 {% if user %}
                     <span>Welcome, {{ user.username }}!</span>
+                    <a href="{{ url_for('history') }}" class="btn btn-outline">History</a>
                     <a href="{{ url_for('profile') }}" class="btn btn-outline">Profile</a>
                     <a href="{{ url_for('logout') }}" class="btn">Logout</a>
                 {% else %}
@@ -253,24 +306,51 @@
                 <h2>Detected Items</h2>
                 
                 {% if item_results %}
+
+                {% if recommendation and recommendation.best_match %}
+                <div class="recommendation-banner">
+                    <p class="rec-title">⭐ Recommended pick — highest market value</p>
+                    <p class="rec-item">
+                        <strong>{{ recommendation.best_match.name }}</strong>
+                        — <span class="rec-price">${{ "%.2f"|format(recommendation.best_price) }}</span>
+                    </p>
+                    <p class="score">
+                        Based on the most recent Steam Market price stored for each candidate.
+                        It is pre-selected below; untick it if the match looks wrong.
+                    </p>
+                </div>
+                {% elif item_results %}
+                <div class="recommendation-banner">
+                    <p class="rec-title">No price data available</p>
+                    <p class="score">
+                        None of the detected items have a stored Steam Market price yet, so no
+                        recommendation can be made. Run the price updater
+                        (<code>python Src/DB/bulk_scraper.py</code>) to populate prices.
+                    </p>
+                </div>
+                {% endif %}
+
                 <p>Select up to 2 items to add to your journal:</p>
-                
+
                 <form action="{{ url_for('add_to_journal') }}" method="post" id="addItemsForm">
                     <input type="hidden" name="screenshot_id" value="{{ screenshot_id }}">
-                    
+
                     {% for result in item_results %}
-                    <div class="item-box">
+                    <div class="item-box{% if result.recommended %} recommended{% endif %}">
                         <h3>Detected: {{ result.original }}</h3>
                         {% if result.status == 'found' %}
                             {% if result.matches %}
                                 {% for match in result.matches %}
-                                <div class="match-item {{ match.confidence }}-confidence">
-                                    <input type="checkbox" name="item_id" value="{{ match.id }}" id="item-{{ match.id }}" class="item-checkbox">
+                                <div class="match-item {{ match.confidence }}-confidence{% if match.recommended %} recommended{% endif %}">
+                                    <input type="checkbox" name="item_id" value="{{ match.id }}" id="item-{{ match.id }}" class="item-checkbox"{% if match.recommended %} checked{% endif %}>
                                     <label for="item-{{ match.id }}">
                                         <strong>{{ match.name }}</strong>
-                                        {% if match.price %}
-                                        <span>- ${{ match.price }}</span>
+                                        {% if match.price_value is not none %}
+                                        <span class="price-tag">- ${{ "%.2f"|format(match.price_value) }}</span>
+                                        {% else %}
+                                        <span class="price-unknown">- no price data</span>
                                         {% endif %}
+                                        {% if match.recommended %}<span class="rec-badge">Best value</span>{% endif %}
                                         <div class="score">
                                             Confidence: {{ match.confidence }}
                                             {% if match.score > 0 %}

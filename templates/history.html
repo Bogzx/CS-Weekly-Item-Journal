@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CS2 Weekly Drop Analyzer - Drop History</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #ddd;
+        }
+        .user-nav {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        h1, h2, h3 { color: #333; }
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+        .stat-card {
+            background-color: #f9f9f9;
+            border: 1px solid #ddd;
+            border-left: 5px solid #007bff;
+            border-radius: 4px;
+            padding: 12px 15px;
+        }
+        .stat-card .stat-label {
+            font-size: 0.8em;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: #6c757d;
+            margin: 0;
+        }
+        .stat-card .stat-value {
+            font-size: 1.5em;
+            font-weight: bold;
+            margin: 2px 0 0 0;
+        }
+        .stat-card.accent { border-left-color: #28a745; }
+        .stat-card.warn { border-left-color: #ff9800; }
+        .chart-wrap {
+            overflow-x: auto;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 10px;
+            margin-bottom: 25px;
+            background-color: #fff;
+        }
+        .chart-legend {
+            display: flex;
+            gap: 20px;
+            font-size: 0.85em;
+            color: #6c757d;
+            margin-bottom: 6px;
+        }
+        .swatch {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 2px;
+            margin-right: 5px;
+            vertical-align: middle;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            text-align: left;
+            padding: 8px 10px;
+            border-bottom: 1px solid #eee;
+        }
+        th {
+            background-color: #f1f3f5;
+            font-size: 0.85em;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            color: #495057;
+        }
+        td.num, th.num { text-align: right; }
+        .money { font-weight: bold; color: #1b7a34; }
+        .empty-state {
+            padding: 30px;
+            text-align: center;
+            background-color: #f9f9f9;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            color: #6c757d;
+        }
+        .btn {
+            display: inline-block;
+            padding: 8px 16px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            text-decoration: none;
+        }
+        .btn:hover { background-color: #0069d9; }
+        .btn-outline {
+            background-color: transparent;
+            border: 1px solid #007bff;
+            color: #007bff;
+        }
+        .btn-outline:hover { background-color: #007bff; color: white; }
+        .home-btn {
+            margin-top: 20px;
+            display: inline-block;
+            padding: 8px 16px;
+            background-color: #6c757d;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+        }
+        .home-btn:hover { background-color: #5a6268; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Drop History</h1>
+            <div class="user-nav">
+                <span>Signed in as <strong>{{ user.username }}</strong></span>
+                <a href="{{ url_for('index') }}" class="btn btn-outline">Home</a>
+                <a href="{{ url_for('profile') }}" class="btn btn-outline">Profile</a>
+            </div>
+        </header>
+
+        {% if summary.weeks_tracked == 0 %}
+            <div class="empty-state">
+                <p><strong>No journalled drops yet.</strong></p>
+                <p>Upload a weekly drop screenshot and add an item to your journal &mdash;
+                   once you have a couple of weeks of entries this page charts how your
+                   collection value and per-drop expected value move over time.</p>
+                <a href="{{ url_for('index') }}" class="btn">Analyze a screenshot</a>
+            </div>
+        {% else %}
+            <div class="stat-grid">
+                <div class="stat-card">
+                    <p class="stat-label">Weeks tracked</p>
+                    <p class="stat-value">{{ summary.weeks_tracked }}</p>
+                </div>
+                <div class="stat-card">
+                    <p class="stat-label">Items kept</p>
+                    <p class="stat-value">{{ summary.total_items }}</p>
+                </div>
+                <div class="stat-card accent">
+                    <p class="stat-label">Total value</p>
+                    <p class="stat-value money">${{ "%.2f"|format(summary.total_value) }}</p>
+                </div>
+                <div class="stat-card accent">
+                    <p class="stat-label">EV per drop</p>
+                    <p class="stat-value money">${{ "%.2f"|format(summary.avg_per_item) }}</p>
+                </div>
+                <div class="stat-card">
+                    <p class="stat-label">Avg per week</p>
+                    <p class="stat-value money">${{ "%.2f"|format(summary.avg_per_week) }}</p>
+                </div>
+                {% if summary.best_week %}
+                <div class="stat-card warn">
+                    <p class="stat-label">Best week ({{ summary.best_week.week }})</p>
+                    <p class="stat-value money">${{ "%.2f"|format(summary.best_week.total_value) }}</p>
+                </div>
+                {% endif %}
+            </div>
+
+            {% if chart %}
+            <h2>Value over time</h2>
+            <div class="chart-legend">
+                <span><span class="swatch" style="background:#8fbcff"></span>Value added that week</span>
+                <span><span class="swatch" style="background:#1b7a34"></span>Cumulative total</span>
+            </div>
+            <div class="chart-wrap">
+                <svg width="{{ chart.width }}" height="{{ chart.height }}"
+                     viewBox="0 0 {{ chart.width }} {{ chart.height }}"
+                     role="img"
+                     aria-label="Weekly value added as bars and cumulative collection value as a line">
+                    <!-- baseline -->
+                    <line x1="{{ chart.pad }}" y1="{{ chart.baseline }}"
+                          x2="{{ chart.width - chart.pad }}" y2="{{ chart.baseline }}"
+                          stroke="#ced4da" stroke-width="1" />
+
+                    <!-- per-week bars -->
+                    {% for bar in chart.bars %}
+                    <rect x="{{ bar.x }}" y="{{ bar.y }}"
+                          width="{{ bar.width }}" height="{{ bar.height }}"
+                          fill="#8fbcff" rx="2">
+                        <title>{{ bar.label }}: ${{ "%.2f"|format(bar.value) }} added</title>
+                    </rect>
+                    {% endfor %}
+
+                    <!-- cumulative line -->
+                    <polyline points="{{ chart.polyline }}"
+                              fill="none" stroke="#1b7a34" stroke-width="2"
+                              stroke-linejoin="round" stroke-linecap="round" />
+                    {% for point in chart.points %}
+                    <circle cx="{{ point.x }}" cy="{{ point.y }}" r="3" fill="#1b7a34" />
+                    {% endfor %}
+
+                    <!-- axis labels -->
+                    <text x="{{ chart.pad }}" y="{{ chart.pad - 14 }}"
+                          font-size="11" fill="#6c757d">
+                        peak ${{ "%.2f"|format(chart.max_cumulative) }}
+                    </text>
+                    <text x="{{ chart.pad }}" y="{{ chart.baseline + 18 }}"
+                          font-size="11" fill="#6c757d">
+                        {{ chart.bars[0].label }}
+                    </text>
+                    {% if chart.bars|length > 1 %}
+                    <text x="{{ chart.width - chart.pad }}" y="{{ chart.baseline + 18 }}"
+                          font-size="11" fill="#6c757d" text-anchor="end">
+                        {{ chart.bars[-1].label }}
+                    </text>
+                    {% endif %}
+                </svg>
+            </div>
+            {% endif %}
+
+            <h2>Week by week</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Week</th>
+                        <th>Starting</th>
+                        <th class="num">Items</th>
+                        <th class="num">Value added</th>
+                        <th class="num">EV per item</th>
+                        <th class="num">Cumulative</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for bucket in history %}
+                    <tr>
+                        <td>{{ bucket.week }}</td>
+                        <td>{{ bucket.week_start }}</td>
+                        <td class="num">{{ bucket.item_count }}</td>
+                        <td class="num money">${{ "%.2f"|format(bucket.total_value) }}</td>
+                        <td class="num">${{ "%.2f"|format(bucket.avg_value) }}</td>
+                        <td class="num money">${{ "%.2f"|format(bucket.cumulative_value) }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+
+        <a href="{{ url_for('index') }}" class="home-btn">Back to Home</a>
+    </div>
+</body>
+</html>
