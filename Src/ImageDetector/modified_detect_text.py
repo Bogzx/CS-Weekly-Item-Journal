@@ -5,29 +5,56 @@ from ultralytics import YOLO
 import os
 import tempfile
 
+# Minimum YOLO confidence for a box to count as the weekly-drop panel.
+# Previously no threshold was passed at all, so ultralytics' permissive default
+# let near-noise detections through and they were treated as a real panel.
+DEFAULT_CONFIDENCE = 0.4
+
+
+class DetectionError(RuntimeError):
+    """Raised when the weekly-drop panel cannot be located in a screenshot.
+
+    This exists so an undetectable image fails loudly. The previous behaviour
+    was to silently fall back to slicing the *entire* screenshot into quarters,
+    which always produced four plausible-looking strings of unrelated UI text
+    and then fuzzy-matched them against the item database. The user got four
+    confident, wrong item names with no indication anything had gone wrong.
+    """
+
+
 class WeeklyDropProcessor:
-    def __init__(self, yolo_model_path="Models/BOX_TRAINED.pt"):
+    def __init__(self, yolo_model_path="Models/BOX_TRAINED.pt",
+                 confidence=DEFAULT_CONFIDENCE):
         """
         Initialize the weekly drop processor
-        
+
         Args:
             yolo_model_path: Path to the pre-trained YOLO model
+            confidence: Minimum detection confidence for the drop panel box
         """
         self.model = YOLO(yolo_model_path)
+        self.confidence = confidence
         # Initialize EasyOCR reader
         self.reader = easyocr.Reader(['en'])  # English language
-        
-    def process_image(self, image_path, save_crops=False, output_dir=None):
+
+    def process_image(self, image_path, save_crops=False, output_dir=None,
+                      allow_full_image_fallback=False):
         """
         Process an image containing weekly drops
-        
+
         Args:
             image_path: Path to the input image
             save_crops: Whether to save the cropped images
             output_dir: Directory to save output images (used only if save_crops=True)
-            
+            allow_full_image_fallback: If the panel is not found, slice the whole
+                image instead of raising. Off by default -- see DetectionError.
+
         Returns:
             A list of detected text for each item in the weekly drop
+
+        Raises:
+            ValueError: the image could not be read
+            DetectionError: no drop panel was found above the confidence threshold
         """
         # Create temporary output directory if saving crops but no directory specified
         if save_crops and not output_dir:
@@ -43,20 +70,36 @@ class WeeklyDropProcessor:
             raise ValueError(f"Could not read image at {image_path}")
             
         # Run YOLO detection to get the main bounding box
-        results = self.model(image)
-        
-        # Extract the bounding box coordinates 
-        if len(results[0].boxes) == 0:
+        results = self.model(image, conf=self.confidence, verbose=False)
+
+        # Extract the bounding box coordinates
+        boxes = results[0].boxes
+        if len(boxes) == 0:
+            if not allow_full_image_fallback:
+                raise DetectionError(
+                    f"No weekly-drop panel found in {os.path.basename(image_path)} "
+                    f"at confidence >= {self.confidence}. Make sure the screenshot "
+                    f"shows the full CS2 weekly care package screen."
+                )
             print("No bounding box detected in the image. Trying to process the full image.")
             # If no box is detected, use the full image
             main_crop = image
         else:
-            # Get the first box (main box containing all 4 weekly drops)
-            main_box = results[0].boxes[0].xyxy.cpu().numpy()[0]
+            # Take the highest-confidence box, not simply the first one that
+            # happened to come back. On busy screenshots the model can emit
+            # several candidates and their order is not a ranking.
+            confidences = boxes.conf.cpu().numpy()
+            best_index = int(confidences.argmax())
+            main_box = boxes[best_index].xyxy.cpu().numpy()[0]
             x1, y1, x2, y2 = map(int, main_box)
-            
+
             # Crop the main box
             main_crop = image[y1:y2, x1:x2]
+
+        if main_crop.size == 0:
+            raise DetectionError(
+                f"Detected panel in {os.path.basename(image_path)} is empty after cropping."
+            )
         
         # Save the main crop if requested
         if save_crops:

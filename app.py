@@ -3,9 +3,10 @@ import uuid
 import time
 import re
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for, flash, g
+from flask.sessions import SecureCookieSessionInterface
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.formparser import RequestEntityTooLarge
@@ -24,21 +25,84 @@ import logging
 # Load variables from .env file
 load_dotenv()
 
+# Absolute path to the repository root, so that subprocesses and file lookups
+# do not depend on the process working directory.
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def _env_bool(name, default):
+    """Read a boolean from the environment, accepting 1/true/yes/on."""
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in ('1', 'true', 'yes', 'on')
+
+
+# Written to price_update_config.json on first run if it is missing. An empty
+# 'collections' list means "every collection".
+DEFAULT_PRICE_UPDATE_CONFIG = {
+    "collections": [],
+    "max_items": 5000,
+    "batch_size": 100,
+}
+
+
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24))
+
+# How long a "remember me" session lasts. Sessions without "remember me" get
+# REMEMBER_ME_OFF_LIFETIME instead (see login()).
+REMEMBERED_SESSION_LIFETIME = timedelta(days=int(os.environ.get('SESSION_LIFETIME_DAYS', '120')))
+UNREMEMBERED_SESSION_LIFETIME = timedelta(hours=1)
 
 # Configure the session to use cookies
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['MAX_CONTENT_LENGTH'] = 256 * 1024 * 1024  # 256MB max upload (increased from 128MB)
 app.config['MAX_CONTENT_PATH'] = 16 * 1024 * 1024  # 16MB max for form fields
-app.config['DATABASE'] = 'csgo_items.db'
-app.config['MODEL_PATH'] = os.path.join('Models', 'BOX_TRAINED.pt')
+app.config['DATABASE'] = os.environ.get('DATABASE_PATH', 'csgo_items.db')
+app.config['MODEL_PATH'] = os.environ.get('MODEL_PATH', os.path.join('Models', 'BOX_TRAINED.pt'))
 app.config['SESSION_TYPE'] = 'filesystem'
 app.config['SESSION_PERMANENT'] = True
-app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=120)  # Set default to 30 days
-app.config['SESSION_COOKIE_SECURE'] = True  # Set to False if not using HTTPS
+app.config['PERMANENT_SESSION_LIFETIME'] = REMEMBERED_SESSION_LIFETIME
+# Only send the session cookie over HTTPS. This MUST be false when serving
+# plain HTTP -- with it hard-coded to True, login silently failed on any LAN
+# or non-TLS host because the browser refused to store the cookie.
+app.config['SESSION_COOKIE_SECURE'] = _env_bool('SESSION_COOKIE_SECURE', False)
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+
+
+class RememberMeSessionInterface(SecureCookieSessionInterface):
+    """Give each session its own cookie lifetime.
+
+    Flask reads PERMANENT_SESSION_LIFETIME from app.config when it serializes
+    the cookie, which makes the lifetime process-global. Overriding
+    get_expiration_time lets an individual session opt into the short lifetime
+    without mutating shared state.
+    """
+
+    def get_expiration_time(self, app, session):
+        if not session.permanent:
+            return None
+        lifetime = (REMEMBERED_SESSION_LIFETIME if session.get('remember')
+                    else UNREMEMBERED_SESSION_LIFETIME)
+        return datetime.now(timezone.utc) + lifetime
+
+
+app.session_interface = RememberMeSessionInterface()
+
+
+@app.before_request
+def enforce_session_expiry():
+    """Drop sessions past their absolute expiry.
+
+    get_expiration_time above sets the cookie's browser-side expiry. This is
+    the server-side half: a client that ignores the cookie expiry (or replays a
+    stored cookie) still gets logged out.
+    """
+    expires_at = session.get('expires_at')
+    if expires_at is not None and datetime.now(timezone.utc).timestamp() > expires_at:
+        session.clear()
 
 # Increase request size limits for Werkzeug
 app.config['MAX_FORM_MEMORY_SIZE'] = 64 * 1024 * 1024  # 64MB for form data
@@ -46,11 +110,30 @@ app.config['MAX_FORM_MEMORY_SIZE'] = 64 * 1024 * 1024  # 64MB for form data
 # Ensure the upload folder exists
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-# Initialize the weekly drop processor
-processor = WeeklyDropProcessor(app.config['MODEL_PATH'])
+# The weekly drop processor is built lazily, on the first upload.
+#
+# It used to be constructed here at import time, which meant loading the YOLO
+# weights and pulling down EasyOCR's models before Flask could even start. Any
+# failure in that path -- most notably the `AttributeError: Can't get attribute
+# 'C3k2'` raised by ultralytics < 8.3.94 when unpickling these YOLO11 weights --
+# was an unrecoverable crash at startup with no route ever registered.
+#
+# Deferring it means the web app boots, the login and journal pages work, and a
+# model problem surfaces as an error on the page that actually needed the model.
+# It also keeps the test suite and `flask routes` from paying a model load.
+_processor = None
 
-# Initialize the item matcher
+# Initialize the item matcher (cheap: it only stores a path until first query)
 matcher = ItemMatcher(app.config['DATABASE'])
+
+
+def get_processor():
+    """Return the shared WeeklyDropProcessor, constructing it on first use."""
+    global _processor
+    if _processor is None:
+        app.logger.info("Loading detection model from %s", app.config['MODEL_PATH'])
+        _processor = WeeklyDropProcessor(app.config['MODEL_PATH'])
+    return _processor
 
 # Database functions
 def get_db():
@@ -157,6 +240,128 @@ def get_journal_total(journal_items):
     """Calculate total value of items in a journal."""
     return sum(float(item.get('item_price', 0) or 0) for item in journal_items)
 
+
+def get_journal_history(user_id):
+    """Aggregate a user's journal into a per-week drop history.
+
+    CS2 grants one care package per week, so the natural unit for "how am I
+    doing over time" is the ISO-ish week the item was journalled in. Returns
+    buckets oldest-first, each carrying the number of items kept, their total
+    value, the mean value per item that week (the realised expected value of a
+    drop) and the running cumulative total.
+    """
+    conn = get_db()
+    rows = conn.execute(
+        """
+        SELECT
+            strftime('%Y-W%W', created_at) AS week,
+            MIN(date(created_at))          AS week_start,
+            COUNT(*)                       AS item_count,
+            COALESCE(SUM(item_price), 0)   AS total_value,
+            AVG(item_price)                AS avg_value
+        FROM user_journals
+        WHERE user_id = ?
+        GROUP BY week
+        ORDER BY week ASC
+        """,
+        (user_id,)
+    ).fetchall()
+
+    history = []
+    running_total = 0.0
+    for row in rows:
+        total = float(row.get('total_value') or 0)
+        running_total += total
+        history.append({
+            'week': row.get('week'),
+            'week_start': row.get('week_start'),
+            'item_count': int(row.get('item_count') or 0),
+            # AVG() skips NULLs, so this is the mean over *priced* items only,
+            # which is what you want for an EV figure.
+            'avg_value': float(row.get('avg_value') or 0),
+            'total_value': total,
+            'cumulative_value': running_total,
+        })
+    return history
+
+
+def summarize_history(history):
+    """Headline numbers for the history page."""
+    if not history:
+        return {
+            'weeks_tracked': 0,
+            'total_items': 0,
+            'total_value': 0.0,
+            'avg_per_item': 0.0,
+            'avg_per_week': 0.0,
+            'best_week': None,
+        }
+
+    total_items = sum(bucket['item_count'] for bucket in history)
+    total_value = history[-1]['cumulative_value']
+
+    return {
+        'weeks_tracked': len(history),
+        'total_items': total_items,
+        'total_value': total_value,
+        'avg_per_item': (total_value / total_items) if total_items else 0.0,
+        'avg_per_week': total_value / len(history),
+        'best_week': max(history, key=lambda bucket: bucket['total_value']),
+    }
+
+
+def build_history_chart(history, width=760, height=260, pad=44):
+    """Pre-compute SVG geometry for the history chart.
+
+    The app ships no charting library and the templates load nothing from a
+    CDN, so the coordinates are worked out here and the template simply emits
+    them. Bars are the per-week value; the line is the cumulative total.
+    """
+    if not history:
+        return None
+
+    inner_w = width - pad * 2
+    inner_h = height - pad * 2
+    baseline = pad + inner_h
+    count = len(history)
+
+    # `or 1.0` keeps an all-zero journal (every item unpriced) from dividing
+    # by zero and instead draws a flat line along the baseline.
+    max_cumulative = max(b['cumulative_value'] for b in history) or 1.0
+    max_weekly = max(b['total_value'] for b in history) or 1.0
+
+    step = inner_w / (count - 1) if count > 1 else 0
+    bar_width = max(6.0, min(44.0, (inner_w / count) * 0.55))
+
+    points = []
+    bars = []
+    for index, bucket in enumerate(history):
+        x = pad + (step * index if count > 1 else inner_w / 2)
+        y = baseline - (bucket['cumulative_value'] / max_cumulative) * inner_h
+        points.append((round(x, 2), round(y, 2)))
+
+        bar_height = (bucket['total_value'] / max_weekly) * inner_h
+        bars.append({
+            'x': round(x - bar_width / 2, 2),
+            'y': round(baseline - bar_height, 2),
+            'width': round(bar_width, 2),
+            'height': round(bar_height, 2),
+            'label': bucket['week'],
+            'value': bucket['total_value'],
+        })
+
+    return {
+        'width': width,
+        'height': height,
+        'pad': pad,
+        'baseline': baseline,
+        'max_cumulative': max_cumulative,
+        'max_weekly': max_weekly,
+        'polyline': ' '.join(f'{x},{y}' for x, y in points),
+        'points': [{'x': x, 'y': y} for x, y in points],
+        'bars': bars,
+    }
+
 def cleanup_uploads():
     """Remove old uploads to prevent disk filling up."""
     # In a production app, you might want a more sophisticated cleanup strategy
@@ -169,14 +374,15 @@ def cleanup_uploads():
             print(f"Error cleaning up file {file_path}: {e}")
 
 def process_image(image_path):
-    """Process an image using the WeeklyDropProcessor."""
-    try:
-        # Process the image and get the detected text for each item
-        item_names = processor.process_image(image_path, save_crops=False)
-        return item_names
-    except Exception as e:
-        print(f"Error processing image: {e}")
-        return []
+    """Process an image using the WeeklyDropProcessor.
+
+    Errors deliberately propagate. This used to swallow every exception and
+    return [], so a failed model load, an unreadable upload or a screenshot
+    with no drop panel all surfaced to the user as the same bare "No items
+    were detected in the image" with the real cause visible only in the server
+    log. upload_file() renders the exception into the results page instead.
+    """
+    return get_processor().process_image(image_path, save_crops=False)
 
 def clean_item_name(name):
     """Clean up the detected item name for better database matching."""
@@ -365,6 +571,73 @@ def match_items_in_database(item_names):
     
     return results
 
+
+def _as_price(value):
+    """Coerce a stored price into a float, tolerating None and junk strings.
+
+    Prices arrive from SQLite and from the Steam scrapers, so a column can hold
+    a REAL, a string like "1.23", or NULL for an item that has never been
+    priced. Anything that is not a usable non-negative number becomes None so
+    that it is simply excluded from the comparison rather than crashing it.
+    """
+    if value is None:
+        return None
+    try:
+        price = float(value)
+    except (TypeError, ValueError):
+        return None
+    if price < 0:
+        return None
+    return price
+
+
+def annotate_recommendation(item_results):
+    """Tag the highest-value drop so the UI can recommend it.
+
+    README.md:5 and :12 advertise that the app "automatically recommends the
+    highest-value item", and the usage steps at README.md:126 tell the user the
+    recommendation will be highlighted -- but no code ever implemented it. The
+    results page was a flat checkbox list ordered by OCR match score
+    (item_matcher.py:327 sorts on 'score'), which has nothing to do with price.
+
+    For each of the four detected slots we pick the priciest candidate match,
+    then mark the single most valuable slot overall. Both the slot and the
+    winning match get flagged so the template can highlight the exact checkbox
+    rather than just the box it lives in.
+
+    Returns the recommended slot dict, or None when nothing anywhere has a
+    known price (an unpriced database is the common first-run state).
+    """
+    best_slot = None
+
+    for result in item_results:
+        best_match = None
+
+        for match in result.get('matches') or []:
+            price = _as_price(match.get('price'))
+            # Keep the parsed value so the template can format it without
+            # re-parsing, and so unpriced rows stay visually distinct.
+            match['price_value'] = price
+            if price is None:
+                continue
+            if best_match is None or price > best_match['price_value']:
+                best_match = match
+
+        result['best_match'] = best_match
+        result['best_price'] = best_match['price_value'] if best_match else None
+
+        if best_match is not None and (
+            best_slot is None or best_match['price_value'] > best_slot['best_price']
+        ):
+            best_slot = result
+
+    if best_slot is not None:
+        best_slot['recommended'] = True
+        best_slot['best_match']['recommended'] = True
+
+    return best_slot
+
+
 # Routes
 @app.route('/')
 def index():
@@ -466,17 +739,23 @@ def login():
                 session.clear()
                 session['user_id'] = user['id']
                 
-                # Set session to permanent if remember me is checked
-                if remember:
-                    # This makes the session permanent with the lifetime configured in app.config
-                    session.permanent = True
-                else:
-                    # For non-remembered sessions, set a shorter lifetime (e.g., 1 hour)
-                    app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=1)
-                    session.permanent = True
-                    # Reset back to the default for other users
-                    app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=120)
-                
+                # Set the session lifetime according to "remember me".
+                #
+                # This was previously a no-op: the 1-hour lifetime was written
+                # to app.config and then immediately overwritten with 120 days
+                # BEFORE Flask serialized the cookie at the end of the request,
+                # so every session got 120 days regardless. Worse, mutating
+                # app.config is process-global -- one user's login changed the
+                # lifetime for every concurrent request.
+                #
+                # Flask reads PERMANENT_SESSION_LIFETIME when it serializes the
+                # cookie, so the value has to still be correct at that point.
+                # We set it per-session instead of globally.
+                session.permanent = True
+                session['remember'] = bool(remember)
+                lifetime = REMEMBERED_SESSION_LIFETIME if remember else UNREMEMBERED_SESSION_LIFETIME
+                session['expires_at'] = (datetime.now(timezone.utc) + lifetime).timestamp()
+
                 # Log the login
                 print(f"User {username} logged in with 'remember me' set to {remember}")
                 
@@ -518,6 +797,22 @@ def profile():
         journal=journal,
         total_value=total_value
     )
+
+@app.route('/history')
+@login_required
+def history():
+    """Drop history and expected value over time."""
+    user = get_current_user()
+    buckets = get_journal_history(user['id'])
+
+    return render_template(
+        'history.html',
+        user=user,
+        history=list(reversed(buckets)),  # table reads newest-first
+        summary=summarize_history(buckets),
+        chart=build_history_chart(buckets)
+    )
+
 
 @app.route('/upload', methods=['POST'])
 @login_required
@@ -640,11 +935,16 @@ def upload_file():
                 total_value=get_journal_total(get_user_journal(user['id']))
             )
         
+        # Work out which of the four drops is worth the most. This mutates
+        # matched_items in place, tagging the winning slot and match.
+        recommendation = annotate_recommendation(matched_items)
+
         # Return the results
         return render_template(
-            'results.html', 
+            'results.html',
             screenshot_id=screenshot_id,
             item_results=matched_items,
+            recommendation=recommendation,
             user=user,
             journal=get_user_journal(user['id']),
             total_value=get_journal_total(get_user_journal(user['id']))
@@ -817,56 +1117,83 @@ def update_prices_job():
     app.logger.info("Running scheduled price update job")
     
     try:
-        # Path to the configuration file
-        config_path = os.environ.get('PRICE_UPDATE_CONFIG', 'price_update_config.json')
-        
+        # Path to the configuration file, resolved against the repo root so the
+        # job does not depend on the process working directory.
+        config_path = os.environ.get(
+            'PRICE_UPDATE_CONFIG', os.path.join(BASE_DIR, 'price_update_config.json')
+        )
+
+        # Write a working default rather than giving up. .gitignore used to
+        # ignore all *.json, so this file could never be committed and the job
+        # bailed out here on every install -- the advertised "real-time price
+        # tracking" never ran for anyone.
         if not os.path.exists(config_path):
-            app.logger.warning(f"Price update configuration file not found: {config_path}")
-            return
-            
+            app.logger.warning(
+                f"Price update configuration not found at {config_path}; writing defaults."
+            )
+            try:
+                with open(config_path, 'w') as f:
+                    json.dump(DEFAULT_PRICE_UPDATE_CONFIG, f, indent=2)
+            except OSError as e:
+                app.logger.error(f"Could not write default price config: {e}")
+                return
+
         # Read configuration
         with open(config_path, 'r') as f:
             config = json.load(f)
-            
+
         collections = config.get('collections', [])
         max_items = config.get('max_items', 100)
-        retry_on_rate_limit = config.get('retry_on_rate_limit', True)
-        all_cases_graffiti = config.get('all_cases_graffiti', False)
-        
+        batch_size = config.get('batch_size', 100)
+
         app.logger.info(f"Updating prices for collections: {collections}, max items: {max_items}")
-        
-        # Run update_price.py as a separate process to avoid database locking
-        db_path = app.config['DATABASE']
-        
+
+        # Run the bulk scraper as a separate process to avoid database locking.
+        #
+        # This used to invoke 'src/DB/update_price.py'. Two bugs in one line:
+        #   1. The directory is 'Src/DB', capital S. Windows' case-insensitive
+        #      filesystem hid it; on Linux and macOS the subprocess just failed,
+        #      so the advertised daily price update silently never ran.
+        #   2. update_price.py sleeps 15 s before EVERY single item request
+        #      (Src/DB/update_price.py:26). Against a 20k+ row database that is
+        #      over three days of continuous scraping for one refresh.
+        #      bulk_scraper.py fetches 100 items per request instead.
+        #
+        # Paths are now built from this file's own location so the job works
+        # regardless of the process working directory.
+        db_path = os.path.abspath(app.config['DATABASE'])
+        scraper_path = os.path.join(BASE_DIR, 'Src', 'DB', 'bulk_scraper.py')
+
+        if not os.path.exists(scraper_path):
+            app.logger.error(f"Bulk scraper not found at {scraper_path}")
+            return
+
         # Build command for subprocess
         cmd = [
             sys.executable,  # Python executable
-            'src/DB/update_price.py',
+            scraper_path,
             '--db', db_path
         ]
-        
+
         # Add collections if specified
         if collections:
             cmd.append('--collections')
             cmd.extend(collections)
-            
+
         # Add max items if specified
         if max_items:
             cmd.append('--max')
             cmd.append(str(max_items))
-            
-        # Add no-retry flag if retry is disabled
-        if not retry_on_rate_limit:
-            cmd.append('--no-retry')
-            
-        # Add cases and graffiti flag if specified
-        if all_cases_graffiti:
-            cmd.append('--all-cases-graffiti')
-        
+
+        # Number of items to pull per Steam request
+        if batch_size:
+            cmd.append('--batch-size')
+            cmd.append(str(batch_size))
+
         app.logger.info(f"Executing command: {' '.join(cmd)}")
         
         # Execute the command in a separate process
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, cwd=BASE_DIR)
         
         if result.returncode == 0:
             app.logger.info(f"Price update completed: {result.stdout}")
@@ -931,8 +1258,15 @@ def shutdown_scheduler():
             app.logger.error(f"Error shutting down scheduler: {e}")
 
 if __name__ == '__main__':
-
-
     # Initialize the scheduler for daily price updates
     init_scheduler()
-    app.run(debug=True,use_reloader=False)
+
+    # debug=True was hard-coded. Werkzeug's debugger exposes an interactive
+    # Python console on any unhandled exception, so shipping it on by default
+    # is remote code execution the moment the app is reachable off localhost.
+    # It is now opt-in via FLASK_DEBUG.
+    debug_mode = _env_bool('FLASK_DEBUG', False)
+    host = os.environ.get('FLASK_HOST', '127.0.0.1')
+    port = int(os.environ.get('FLASK_PORT', '5000'))
+
+    app.run(host=host, port=port, debug=debug_mode, use_reloader=False)

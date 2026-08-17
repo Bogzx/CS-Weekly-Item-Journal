@@ -1,0 +1,5 @@
+{
+  "collections": [],
+  "max_items": 5000,
+  "batch_size": 100
+}

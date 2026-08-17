@@ -1,6 +1,10 @@
 # CS-Weekly-Item-Journal
 
-<img src="https://img.shields.io/badge/CS2-Drop_Analyzer-orange" alt="CS2 Drop Analyzer"> <img src="https://img.shields.io/badge/Python-3.6%2B-blue" alt="Python"> <img src="https://img.shields.io/badge/YOLO-11%2B-green" alt="YOLO"> <img src="https://img.shields.io/badge/OpenCV-4.5%2B-red" alt="OpenCV"> <img src="https://img.shields.io/badge/Flask-2.0%2B-lightgrey" alt="Flask">
+![CS2 Drop Analyzer](https://img.shields.io/badge/CS2-Drop_Analyzer-orange)
+![Python](https://img.shields.io/badge/Python-3.11%2B-blue)
+![YOLO](https://img.shields.io/badge/YOLO-11-green)
+![OpenCV](https://img.shields.io/badge/OpenCV-4.9%2B-red)
+![Flask](https://img.shields.io/badge/Flask-3.0%2B-lightgrey)
 
 A web application that analyzes your CS2 weekly drop screenshots, identifies items with AI, compares prices, and helps you track your drops over time in a personal journal. The system automatically recommends the highest-value item to select based on current Steam Market prices.
 
@@ -12,6 +16,7 @@ A web application that analyzes your CS2 weekly drop screenshots, identifies ite
 * **Price Comparison** : Automatically determines which item has the highest market value
 * **Real-time Price Tracking** : Automatic Steam Market price monitoring and updates
 * **User Journal System** : Track your drops over time and monitor your total collection value
+* **Drop History & EV** : Per-week charts of value added, cumulative collection value and expected value per drop
 * **Web Interface** : Easy-to-use Flask web application for uploading and analyzing screenshots
 
 ## 📋 Overview
@@ -60,54 +65,103 @@ The extracted text is processed through a sophisticated matching system that:
 
 * **Object Detection** : Ultralytics YOLO
 * **Computer Vision** : OpenCV, PIL
-* **OCR** : EasyOCR, PyTesseract
+* **OCR** : EasyOCR
 * **Backend** : Python, Flask
 * **Database** : SQLite
 * **Text Processing** : Advanced fuzzy matching algorithms
 * **API Integration** : Steam Market 
 * **Task Scheduling** : APScheduler
-* **Frontend** : HTML, CSS, and JavaScript with Bootstrap for responsive design
+* **Frontend** : Hand-written HTML, CSS and vanilla JavaScript (no framework, no CDN)
 
 ## 🔧 Setup and Installation
 
 ### Prerequisites
 
-* Python 3.6 or higher
-* CUDA-compatible GPU recommended for faster detection
-* Node.js 12.0+ (for certain dataset scripts)
+* **Python 3.11, 3.12 or 3.13.** The pipeline needs `ultralytics >= 8.3.94` to
+  load the bundled YOLO11 weights, and `numpy >= 1.26` to install at all on
+  3.12+.
+* **Node.js 18+** — only for `create_cs_skins.js`, which scrapes the skin list.
+* A GPU is **not** required. Detection runs on four small crops per screenshot
+  and is fast enough on CPU.
 
-### Installation Steps
+### Install
 
-<pre><div class="relative flex flex-col rounded-lg"><div class="text-text-300 absolute pl-3 pt-2.5 text-xs">bash</div><div class="pointer-events-none sticky my-0.5 ml-0.5 flex items-center justify-end px-1.5 py-1 mix-blend-luminosity top-0"><div class="from-bg-300/90 to-bg-300/70 pointer-events-auto rounded-md bg-gradient-to-b p-0.5 backdrop-blur-md"><button class="flex flex-row items-center gap-1 rounded-md p-1 py-0.5 text-xs transition-opacity delay-100 text-text-300 active:scale-95 select-none hover:bg-bg-200 opacity-60 hover:opacity-100" data-state="closed"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 256 256" class="text-text-500 mr-px -translate-y-[0.5px]"><path d="M200,32H163.74a47.92,47.92,0,0,0-71.48,0H56A16,16,0,0,0,40,48V216a16,16,0,0,0,16,16H200a16,16,0,0,0,16-16V48A16,16,0,0,0,200,32Zm-72,0a32,32,0,0,1,32,32H96A32,32,0,0,1,128,32Zm72,184H56V48H82.75A47.93,47.93,0,0,0,80,64v8a8,8,0,0,0,8,8h80a8,8,0,0,0,8-8V64a47.93,47.93,0,0,0-2.75-16H200Z"></path></svg><span class="text-text-200 pr-0.5">Copy</span></button></div></div><div><div class="prismjs code-block__code !my-0 !rounded-lg !text-sm !leading-relaxed"><code class="language-bash"><span class=""><span class="token comment"># Clone the repository</span><span class="">
-</span></span><span class=""><span class=""></span><span class="token function">git</span><span class=""> clone https://github.com/yourusername/CS-Weekly-Item-Journal.git
-</span></span><span class=""><span class=""></span><span class="token builtin class-name">cd</span><span class=""> CS-Weekly-Item-Journal
-</span></span><span class="">
-</span><span class=""><span class=""></span><span class="token comment"># Create and activate virtual environment</span><span class="">
-</span></span><span class="">python -m venv venv
-</span><span class=""><span class=""></span><span class="token builtin class-name">source</span><span class=""> venv/bin/activate  </span><span class="token comment"># On Windows: venv\Scripts\activate</span><span class="">
-</span></span><span class="">
-</span><span class=""><span class=""></span><span class="token comment"># Install dependencies</span><span class="">
-</span></span><span class=""><span class="">pip </span><span class="token function">install</span><span class=""> -r requirements.txt
-</span></span><span class="">
-</span><span class=""><span class=""></span><span class="token comment"># Create the database</span><span class="">
-</span></span><span class="">python create_database.py
-</span><span class="">
-</span><span class=""><span class=""></span><span class="token comment"># Generate CS:GO skins data</span><span class="">
-</span></span><span class=""><span class=""></span><span class="token function">node</span><span class=""> create_cs_skins.js
-</span></span><span class="">
-</span><span class=""><span class=""></span><span class="token comment"># Generate CS:GO cases data</span><span class="">
-</span></span><span class="">python create_cases.py
-</span><span class="">
-</span><span class=""><span class=""></span><span class="token comment"># Populate the database</span><span class="">
-</span></span><span class="">python populate_database.py
-</span><span class="">
-</span><span class=""><span class=""></span><span class="token comment"># Update item prices</span><span class="">
-</span></span><span class="">python update_price.py
-</span><span class="">
-</span><span class=""><span class=""></span><span class="token comment"># Run the Flask application</span><span class="">
-</span></span><span class="">python app.py</span></code></div></div></div></pre>
+```bash
+# Clone the repository
+git clone https://github.com/Bogzx/CS-Weekly-Item-Journal.git
+cd CS-Weekly-Item-Journal
 
-Visit `http://127.0.0.1:5000` in your browser to access the application.
+# Create and activate a virtual environment
+python -m venv venv
+source venv/bin/activate          # Windows: venv\Scripts\activate
+
+# Install dependencies.
+# The default PyPI torch build is the CUDA one (~2.5 GB on Linux). This app
+# only ever runs inference on small crops, so the CPU build is plenty:
+pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
+
+# ...or just this, if you want whatever torch build pip picks by default:
+# pip install -r requirements.txt
+```
+
+### Configure
+
+```bash
+cp .env.EXAMPLE .env
+
+# Generate a real signing key and write it into .env
+python -c "import secrets; print('SECRET_KEY=' + secrets.token_hex(32))"
+```
+
+Open `.env` and replace the placeholder `SECRET_KEY` line with the generated
+one. Everything else has a working default.
+
+### Build the item database
+
+> **Heads up:** this is the slow part. `create_cs_skins.js` scrapes a wiki and
+> the price steps make tens of thousands of Steam Market requests. Expect
+> hours. See [Owner follow-ups](#-known-gaps) — a prebuilt `csgo_items.db`
+> shipped as a Release asset would remove this step entirely.
+
+All database scripts live in `Src/DB/`:
+
+```bash
+# Create the empty schema
+python Src/DB/create_database.py
+
+# Generate the CS2 skin list (Node)
+node Src/DB/create_cs_skins.js
+
+# Generate the CS2 case list
+python Src/DB/create_cases.py
+
+# Populate the database from the generated data
+python Src/DB/populate_database.py
+
+# Fetch prices. bulk_scraper pulls 100 items per request -- prefer it.
+python Src/DB/bulk_scraper.py
+
+# Optional: add graffiti
+python Src/DB/graffiti_scraper.py
+```
+
+### Run
+
+```bash
+python app.py
+```
+
+Visit `http://127.0.0.1:5000`.
+
+To expose it on a LAN or enable the debugger, use the environment variables
+rather than editing the source:
+
+```bash
+FLASK_HOST=0.0.0.0 FLASK_PORT=5000 FLASK_DEBUG=1 python app.py
+```
+
+`FLASK_DEBUG` is off by default on purpose — Werkzeug's debugger hands out an
+interactive Python console on any unhandled exception.
 
 ## 📊 Database Structure
 
@@ -122,28 +176,66 @@ The system uses a SQLite database with the following key tables:
 
 1. **Register/Login** : Create an account to track your drops over time
 2. **Upload Screenshot** : Take a screenshot of your CS2 weekly drops screen and upload it
-3. **Review Results** : The system will identify items and display matching candidates with price information
-4. **Select Item** : The highest-priced item will be highlighted as the recommended choice
-5. **Add to Journal** : Select the correct items to add to your personal journal
-6. **Track Value** : Monitor the total value of your collected items in your journal
+3. **Review Results** : The system identifies items and displays matching candidates with price information
+4. **Select Item** : The highest-priced item is highlighted as the recommended choice and pre-selected
+5. **Add to Journal** : Confirm the correct items to add to your personal journal
+6. **Track Value** : Watch total value and per-drop expected value on the **History** page
 
 ## 🔄 Updating Prices
 
-The system automatically updates prices on a daily schedule, but you can also manually update them:
+The scheduler runs a daily bulk price update automatically once the app is
+running. To update manually:
 
-<pre><div class="relative flex flex-col rounded-lg"><div class="text-text-300 absolute pl-3 pt-2.5 text-xs">bash</div><div class="pointer-events-none sticky my-0.5 ml-0.5 flex items-center justify-end px-1.5 py-1 mix-blend-luminosity top-0"><div class="from-bg-300/90 to-bg-300/70 pointer-events-auto rounded-md bg-gradient-to-b p-0.5 backdrop-blur-md"><button class="flex flex-row items-center gap-1 rounded-md p-1 py-0.5 text-xs transition-opacity delay-100 text-text-300 active:scale-95 select-none hover:bg-bg-200 opacity-60 hover:opacity-100" data-state="closed"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 256 256" class="text-text-500 mr-px -translate-y-[0.5px]"><path d="M200,32H163.74a47.92,47.92,0,0,0-71.48,0H56A16,16,0,0,0,40,48V216a16,16,0,0,0,16,16H200a16,16,0,0,0,16-16V48A16,16,0,0,0,200,32Zm-72,0a32,32,0,0,1,32,32H96A32,32,0,0,1,128,32Zm72,184H56V48H82.75A47.93,47.93,0,0,0,80,64v8a8,8,0,0,0,8,8h80a8,8,0,0,0,8-8V64a47.93,47.93,0,0,0-2.75-16H200Z"></path></svg><span class="text-text-200 pr-0.5">Copy</span></button></div></div><div><div class="prismjs code-block__code !my-0 !rounded-lg !text-sm !leading-relaxed"><code class="language-bash"><span class=""><span class="token comment"># Update prices for all items</span><span class="">
-</span></span><span class="">python update_price.py
-</span><span class="">
-</span><span class=""><span class=""></span><span class="token comment"># Update prices for specific collections</span><span class="">
-</span></span><span class=""><span class="">python update_price.py --collections </span><span class="token string">"Clutch Case"</span><span class=""></span><span class="token string">"Chroma Case"</span><span class="">
-</span></span><span class="">
-</span><span class=""><span class=""></span><span class="token comment"># Use bulk updater (faster)</span><span class="">
-</span></span><span class=""><span class="">python bulk_scraper.py --collections </span><span class="token string">"Clutch Case"</span><span class=""></span><span class="token string">"Chroma Case"</span></span></code></div></div></div></pre>
+```bash
+# Bulk update -- 100 items per Steam request. This is the fast path.
+python Src/DB/bulk_scraper.py
 
-### Database Verification
+# Restrict to specific collections
+python Src/DB/bulk_scraper.py --collections "Clutch Case" "Chroma Case"
 
-<pre><div class="relative flex flex-col rounded-lg"><div class="text-text-300 absolute pl-3 pt-2.5 text-xs">bash</div><div class="pointer-events-none sticky my-0.5 ml-0.5 flex items-center justify-end px-1.5 py-1 mix-blend-luminosity top-0"><div class="from-bg-300/90 to-bg-300/70 pointer-events-auto rounded-md bg-gradient-to-b p-0.5 backdrop-blur-md"><button class="flex flex-row items-center gap-1 rounded-md p-1 py-0.5 text-xs transition-opacity delay-100 text-text-300 active:scale-95 select-none hover:bg-bg-200 opacity-60 hover:opacity-100" data-state="closed"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 256 256" class="text-text-500 mr-px -translate-y-[0.5px]"><path d="M200,32H163.74a47.92,47.92,0,0,0-71.48,0H56A16,16,0,0,0,40,48V216a16,16,0,0,0,16,16H200a16,16,0,0,0,16-16V48A16,16,0,0,0,200,32Zm-72,0a32,32,0,0,1,32,32H96A32,32,0,0,1,128,32Zm72,184H56V48H82.75A47.93,47.93,0,0,0,80,64v8a8,8,0,0,0,8,8h80a8,8,0,0,0,8-8V64a47.93,47.93,0,0,0-2.75-16H200Z"></path></svg><span class="text-text-200 pr-0.5">Copy</span></button></div></div><div><div class="prismjs code-block__code !my-0 !rounded-lg !text-sm !leading-relaxed"><code class="language-bash"><span class=""><span class="token comment"># Verify database structure and content</span><span class="">
-</span></span><span class="">python verify_database.py</span></code></div></div></div></pre>
+# Control how many items are fetched per request (default 100)
+python Src/DB/bulk_scraper.py --batch-size 100 --max 5000
+```
+
+`Src/DB/update_price.py` also exists and updates items one at a time. It sleeps
+15 seconds before **every** request, so a full refresh of a 20k-row database
+takes over three days. Use it only for a handful of specific items.
+
+### Database verification
+
+```bash
+python Src/DB/verify_database.py
+```
+
+## ✅ Tests
+
+```bash
+pip install pytest
+pytest -q
+```
+
+`tests/test_golden_image.py` runs the real detection + OCR pipeline against a
+committed screenshot and asserts the four item names still come out. It is slow
+(it downloads EasyOCR weights on first run) but it catches model-load breakage,
+`ultralytics` drift, EasyOCR changes and CS2 UI changes in one assertion.
+
+The unit tests around the recommendation logic and history aggregation are fast
+and need no model:
+
+```bash
+pytest -q -m "not slow"
+```
+
+## 🕳️ Known gaps
+
+* **The YOLO model cannot currently be retrained.** No label files and no
+  `data.yaml` were ever committed, and `my_model/train/args.yaml:4` points at a
+  Google Colab path that no longer exists. `Models/BOX_TRAINED.pt` (mAP50
+  0.995) is therefore irreplaceable. Re-labelling is an owner task — see the
+  pull request description for concrete steps.
+* **No prebuilt `csgo_items.db` ships.** Every new user pays hours of scraping.
+  Publishing one as a GitHub Release asset is the single biggest adoption
+  unlock.
 
 ## 🤝 Contributing
 
