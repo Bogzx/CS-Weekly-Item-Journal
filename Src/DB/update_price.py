@@ -7,6 +7,11 @@ import os
 import random
 from datetime import datetime
 
+try:
+    from steam_headers import STEAM_HEADERS, STEAM_TIMEOUT
+except ImportError:  # imported as Src.DB.update_price rather than run directly
+    from Src.DB.steam_headers import STEAM_HEADERS, STEAM_TIMEOUT
+
 def fetch_price(market_url, max_retries=3):
     """
     Fetch the current price of an item from the Steam market API
@@ -26,7 +31,7 @@ def fetch_price(market_url, max_retries=3):
             time.sleep(15)
             
             # Send request to Steam API
-            response = requests.get(market_url)
+            response = requests.get(market_url, headers=STEAM_HEADERS, timeout=STEAM_TIMEOUT)
             
             # Check if we're being rate limited (HTTP 429 or specific Steam error)
             if response.status_code == 429 or (response.status_code == 200 and "Retry Later" in response.text):

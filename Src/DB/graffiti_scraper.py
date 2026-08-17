@@ -7,6 +7,11 @@ import argparse
 import os
 from datetime import datetime
 
+try:
+    from steam_headers import STEAM_HEADERS, STEAM_TIMEOUT
+except ImportError:  # imported as Src.DB.graffiti_scraper rather than run directly
+    from Src.DB.steam_headers import STEAM_HEADERS, STEAM_TIMEOUT
+
 def build_graffiti_search_url(start=0, count=100, sort_column='price', sort_dir='asc'):
     """
     Build a Steam Market URL for CS:GO/CS2 graffiti
@@ -54,7 +59,7 @@ def fetch_graffiti_items(start=0, count=100, retries=3):
     for attempt in range(retries):
         try:
             print(f"Fetching graffiti items {start} to {start+count-1}...")
-            response = requests.get(url)
+            response = requests.get(url, headers=STEAM_HEADERS, timeout=STEAM_TIMEOUT)
             
             if response.status_code == 429:
                 wait_time = 60  # Wait longer on rate limit
@@ -89,9 +94,9 @@ def get_total_graffiti_count():
     - int: Total number of items, or a default value if request fails
     """
     url = build_graffiti_search_url(0, 1)
-    
+
     try:
-        response = requests.get(url)
+        response = requests.get(url, headers=STEAM_HEADERS, timeout=STEAM_TIMEOUT)
         if response.status_code == 200:
             data = response.json()
             return data.get('total_count', 1000)

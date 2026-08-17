@@ -7,6 +7,11 @@ import os
 import urllib.parse
 from datetime import datetime
 
+try:
+    from steam_headers import STEAM_HEADERS, STEAM_TIMEOUT
+except ImportError:  # imported as Src.DB.bulk_scraper rather than run directly
+    from Src.DB.steam_headers import STEAM_HEADERS, STEAM_TIMEOUT
+
 def build_steam_market_url(start=0, count=100, filters=None, query=None, sort_column='price', sort_dir='asc'):
     """
     Build a Steam Market URL with specified filters for CS2 items
@@ -71,7 +76,7 @@ def fetch_prices_in_bulk(start=0, count=100, filters=None, query=None, retries=3
     for attempt in range(retries):
         try:
             print(f"Fetching items {start} to {start+count-1}...")
-            response = requests.get(url)
+            response = requests.get(url, headers=STEAM_HEADERS, timeout=STEAM_TIMEOUT)
             
             if response.status_code == 429:
                 wait_time = 60  # Wait longer for bulk requests
@@ -125,9 +130,9 @@ def get_total_item_count(filters=None, query=None):
     - int: Total number of items, or a default value if request fails
     """
     url = build_steam_market_url(0, 1, filters, query)
-    
+
     try:
-        response = requests.get(url)
+        response = requests.get(url, headers=STEAM_HEADERS, timeout=STEAM_TIMEOUT)
         if response.status_code == 200:
             data = response.json()
             return data.get('total_count', 10000)
