@@ -176,8 +176,25 @@ cython_debug/
 #Custom stuff
 *.csv
 *.db
-*.json
-/uploads
 /uploads
 *.db-wal
 *.db-shm
+
+# Ignoring every *.json was too broad: it also swallowed the price-update
+# config that app.py:965 requires, so the scheduled price update could never
+# ship a working default. Ignore the generated data dumps by name instead and
+# let real config files through.
+cs_skins.json
+cs_cases.json
+cs_graffiti.json
+
+# IDE config -- machine specific, should never have been committed
+.idea/
+
+# Raw ultralytics training run. `weights/best.pt` was byte-identical to
+# Models/BOX_TRAINED.pt and `last.pt` is a mid-training checkpoint; the rest is
+# plots and TensorBoard events. Keep the shipped model in Models/ only.
+my_model/train/
+
+# Sample crops produced by a local run of modified_detect_text.py --save-crops
+/output/
