@@ -4,35 +4,42 @@ This document explains how to use the provided scripts to create and maintain a 
 
 ## System Requirements
 
-* Python 3.6 or higher
-* Node.js 12.0 or higher (for creating CS skins data)
+* Python 3.11, 3.12 or 3.13
+* Node.js 18 or higher (for creating CS skins data)
 * Required Python packages: `sqlite3`, `requests`
 * Required Node.js packages: `node-html-parser` (for `create_cs_skins.js`)
 
 ## Quick Start
 
+> All commands below are written to be run **from the repository root**, which
+> is why they are prefixed with `Src/DB/`. If you `cd Src/DB` first, drop the
+> prefix.
+
 Here's the typical workflow to set up and use the database:
 
 ```bash
 # 1. Create the database structure
-python create_database.py
+python Src/DB/create_database.py
 
 # 2. Generate CS:GO skins data
-node create_cs_skins.js
+node Src/DB/create_cs_skins.js
 
 # 3. Generate CS:GO cases data
-python create_cases.py
+python Src/DB/create_cases.py
 
 # 4. Populate the database with items
-python populate_database.py
+python Src/DB/populate_database.py
 
-# 5. Update item prices
-python update_price.py  # For individual updates
+# 5. Update item prices.
+#    Prefer bulk_scraper: it fetches 100 items per Steam request.
+#    update_price.py sleeps 15 s before EVERY item, so a full refresh of a
+#    20k-row database takes over three days. Use it only for a few items.
+python Src/DB/bulk_scraper.py  # For bulk updates (fast -- use this)
 # OR
-python bulk_scraper.py  # For bulk updates (faster)
+python Src/DB/update_price.py  # One item at a time (very slow)
 
 # 6. Verify database contents
-python verify_database.py
+python Src/DB/verify_database.py
 ```
 
 ## Detailed Instructions
@@ -42,7 +49,7 @@ python verify_database.py
 The first step is to create the SQLite database that will store all the CS:GO items and their prices.
 
 ```bash
-python create_database.py
+python Src/DB/create_database.py
 ```
 
 This will:
@@ -56,7 +63,7 @@ This will:
 Next, you need to generate a CSV file with CS:GO skins data.
 
 ```bash
-node create_cs_skins.js
+node Src/DB/create_cs_skins.js
 ```
 
 This will:
@@ -69,7 +76,7 @@ This will:
 You also need to generate a CSV file with CS:GO cases data.
 
 ```bash
-python create_cases.py
+python Src/DB/create_cases.py
 ```
 
 This will:
@@ -82,7 +89,7 @@ This will:
 Now you can populate the database with items from the CSV files.
 
 ```bash
-python populate_database.py
+python Src/DB/populate_database.py
 ```
 
 Options:
@@ -106,7 +113,7 @@ You have two options for updating item prices:
 #### Option A: Individual Price Updates
 
 ```bash
-python update_price.py
+python Src/DB/update_price.py
 ```
 
 Options:
@@ -119,7 +126,7 @@ Options:
 #### Option B: Bulk Price Updates (Recommended for Efficiency)
 
 ```bash
-python bulk_scraper.py
+python Src/DB/bulk_scraper.py
 ```
 
 Options:
@@ -142,7 +149,7 @@ The bulk updater is much faster as it fetches many items at once rather than one
 To check the contents of your database:
 
 ```bash
-python verify_database.py
+python Src/DB/verify_database.py
 ```
 
 This will display:
@@ -159,20 +166,20 @@ This will display:
 
 ```bash
 # Update your CSV files with new data
-python create_cases.py
+python Src/DB/create_cases.py
 
 # Add only the new collections to the database
-python populate_database.py --collections "New Collection Name"
+python Src/DB/populate_database.py --collections "New Collection Name"
 ```
 
 ### Updating Prices for Specific Collections
 
 ```bash
 # Using individual updater
-python update_price.py --collections "Clutch Case" "Chroma Case"
+python Src/DB/update_price.py --collections "Clutch Case" "Chroma Case"
 
 # Using bulk updater (faster)
-python bulk_scraper.py --collections "Clutch Case" "Chroma Case"
+python Src/DB/bulk_scraper.py --collections "Clutch Case" "Chroma Case"
 ```
 
 ### Finding the Most Valuable Items
@@ -197,7 +204,7 @@ If you encounter rate limiting from Steam:
 
 If you encounter database errors:
 
-* Try recreating the database: `python create_database.py`
+* Try recreating the database: `python Src/DB/create_database.py`
 * Check file permissions
 * Verify the CSV files have the correct format
 
@@ -206,9 +213,9 @@ If you encounter database errors:
 Run any script with `--help` to see available options:
 
 ```bash
-python populate_database.py --help
-python update_price.py --help
-python bulk_scraper.py --help
+python Src/DB/populate_database.py --help
+python Src/DB/update_price.py --help
+python Src/DB/bulk_scraper.py --help
 ```
 
 ## Advanced Usage
@@ -217,22 +224,22 @@ python bulk_scraper.py --help
 
 ```bash
 # Create database in custom location
-python create_database.py my_custom_db.db
+python Src/DB/create_database.py my_custom_db.db
 
 # Use custom paths for everything
-python populate_database.py --db my_custom_db.db --skins my_skins.csv --cases my_cases.csv
+python Src/DB/populate_database.py --db my_custom_db.db --skins my_skins.csv --cases my_cases.csv
 ```
 
 ### Filtering by Item Type and Quality
 
 ```bash
 # Update only StatTrak Factory New AK-47 skins
-python bulk_scraper.py --weapon ak47 --quality stattrak --exterior fn
+python Src/DB/bulk_scraper.py --weapon ak47 --quality stattrak --exterior fn
 ```
 
 ### Debugging
 
 ```bash
 # Enable debug output
-python populate_database.py --debug
+python Src/DB/populate_database.py --debug
 ```
