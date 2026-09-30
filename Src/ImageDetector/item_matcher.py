@@ -2,10 +2,39 @@ import os
 import sqlite3
 import re
 from difflib import SequenceMatcher
+from functools import lru_cache
+
+
+@lru_cache(maxsize=200_000)
+def _word_ratio(a, b):
+    """Character similarity of two words. Cached: the item vocabulary is small
+    and repetitive (weapon names, "sealed graffiti", colours), and a full scan
+    compares the same few OCR words against it thousands of times."""
+    return SequenceMatcher(None, a, b).ratio()
 
 
 class ItemDatabaseNotReady(RuntimeError):
     """The database has no items table yet (the item DB was never built)."""
+
+# Minimum similarity for a candidate to be returned at all.
+MATCH_THRESHOLD = 0.4
+
+# Below this best score from the word-filtered candidates, every item is
+# scored too (the filter can miss when OCR mangled the first words).
+FALLBACK_BELOW = 0.75
+
+# A detected item type is kept unless an item of another type scores more than
+# this much higher.
+TYPE_MARGIN = 0.1
+
+# Match score -> confidence label, calibrated 2026-09-30 on the 77 labelled
+# English slots of Training_Images (tools/ocr_accuracy.py --db, 60 matched):
+#   score >= 0.75: 38 of 38 top matches were the right item   -> 'high'
+#   0.50 - 0.75:   17 of 18                                   -> 'medium'
+#   0.40 - 0.50:    5 of 10                                   -> 'low'
+# (The old 0.85/0.65 cut-offs were set for a scorer that boosted by 1.2.)
+CONFIDENCE_THRESHOLDS = {'high': 0.75, 'medium': 0.5}
+
 
 class ItemMatcher:
     def __init__(self, db_path="csgo_items.db"):
@@ -193,6 +222,15 @@ class ItemMatcher:
         
         return parts
     
+    @staticmethod
+    def _soft_token_overlap(tokens, others):
+        """Mean over `tokens` of the best similarity to any of `others`."""
+        total = 0.0
+        for token in tokens:
+            best = max(_word_ratio(token, other) for other in others)
+            total += best if best >= 0.5 else 0.0
+        return total / len(tokens)
+
     def similarity_score(self, text1, text2):
         """
         Calculate string similarity score between 0 and 1.
@@ -204,24 +242,17 @@ class ItemMatcher:
         # Direct sequence matching (character by character comparison)
         seq_score = SequenceMatcher(None, text1, text2).ratio()
         
-        # Token-based similarity (word matching)
-        tokens1 = set(text1.split())
-        tokens2 = set(text2.split())
-        
-        # Avoid division by zero
+        # Word similarity. Each word counts by its best character similarity
+        # to a word on the other side (below 0.5 counts as no match), so an
+        # OCR-damaged word ("recdii" for "recoil") still contributes. With
+        # exact-only word matching a single misread letter zeroed this part.
+        tokens1 = text1.split()
+        tokens2 = text2.split()
         if not tokens1 or not tokens2:
             token_score = 0
         else:
-            # Jaccard similarity: intersection over union
-            intersection = tokens1.intersection(tokens2)
-            union = tokens1.union(tokens2)
-            token_score = len(intersection) / len(union)
-            
-            # Dice coefficient: 2 * intersection / total tokens
-            dice_score = 2 * len(intersection) / (len(tokens1) + len(tokens2))
-            
-            # Take the better of the two token scores
-            token_score = max(token_score, dice_score)
+            token_score = (self._soft_token_overlap(tokens1, tokens2)
+                           + self._soft_token_overlap(tokens2, tokens1)) / 2
         
         # Containment score (is one text contained in the other?)
         containment_score = 0
@@ -236,144 +267,104 @@ class ItemMatcher:
         
         return combined_score
     
-    def match_item(self, extracted_text, max_results=5, threshold=0.4):
+    def detect_item_type(self, extracted_text):
+        """Guess the item type from the OCR text: 'graffiti', 'case', 'skin' or None.
+
+        Replaces the old assumption that the first of the four slots is always
+        a case. Graffiti say "Sealed Graffiti", cases end in "Case" (OCR'd as
+        "Cose", "Caso", ...), and skins are "Weapon | Finish". None means
+        "search everything". match_item treats the type as a preference, not a
+        filter, so a misread type ("FAMAS | Roll Cage" looks like a case when
+        OCR drops the bar) cannot hide the right item.
+        """
+        words = re.findall(r'[a-z0-9-]+', (extracted_text or '').lower())
+        if not words:
+            return None
+        # "Sealed Graffiti" leads every graffiti name; OCR often damages it
+        # ("Sopled Grettid"). Measured over every non-graffiti name in the
+        # database, the first two words never reach 0.6 against it (max 0.53).
+        if SequenceMatcher(None, ' '.join(words[:2]), 'sealed graffiti').ratio() >= 0.6:
+            return 'graffiti'
+        if len(words) >= 2 and SequenceMatcher(None, words[-1], 'case').ratio() >= 0.75:
+            return 'case'
+        if '|' in extracted_text:
+            return 'skin'
+        return None
+
+    @staticmethod
+    def confidence_label(score):
+        """'high', 'medium' or 'low' for a match score (see CONFIDENCE_THRESHOLDS)."""
+        if score >= CONFIDENCE_THRESHOLDS['high']:
+            return 'high'
+        if score >= CONFIDENCE_THRESHOLDS['medium']:
+            return 'medium'
+        return 'low'
+
+    def match_item(self, extracted_text, max_results=5, threshold=MATCH_THRESHOLD, item_type=None):
         """
         Match extracted text to database items.
         
+        Every candidate is scored the same way: similarity_score() between the
+        normalised OCR text and the item's full normalised name (wear removed,
+        graffiti colour kept, so a colour that was read picks that colour).
+        This replaced three code paths whose scores were not comparable, one
+        of which multiplied by 1.2 and capped at 1.0 -- so any text containing
+        two of an item's words ("Sealed Graffiti") scored a "high" 1.00.
+        
         Args:
             extracted_text: Text extracted from image
-            max_results: Maximum number of matches to return
+            max_results: Maximum number of distinct items to return
             threshold: Minimum similarity score to consider a match
+            item_type: Preferred item type ('case', 'skin', 'graffiti'), e.g.
+                from detect_item_type. Items of other types still win when
+                they score more than TYPE_MARGIN higher.
             
         Returns:
-            List of matches with similarity scores
+            List of {'item', 'score'}, best first, one per distinct item name
+            (the wears of a skin count as one; get_all_wear_variations lists them)
         """
         if not extracted_text or extracted_text.strip() == "":
             return []
             
-        # Normalize the extracted text
         normalized_text = self.normalize_text(extracted_text)
-        parts = self.parse_item_name(extracted_text)
+        if not normalized_text:
+            return []
         
-        # Load all items from cache
         items = self.load_items_cache()
-        
-        matches = []
-        
-        # Check for token-based matches (individual words)
-        if normalized_text:
-            tokens = normalized_text.split()
-            
-            # If we have at least 2 tokens, try matching on them
-            if len(tokens) >= 2:
-                # Get the two most significant tokens (usually weapon name and skin name)
-                significant_tokens = []
-                
-                # Skip very short tokens (1-2 chars) as they're often noise or OCR errors
-                for token in tokens:
-                    if len(token) > 2:
-                        significant_tokens.append(token)
-                        if len(significant_tokens) >= 2:
-                            break
-                            
-                # If we found significant tokens, try matching on them
-                if significant_tokens:
-                    for item in items:
-                        # Check if all significant tokens appear in the base name
-                        base_name = item.get('base_normalized', '')
-                        token_match = all(token in base_name for token in significant_tokens)
-                        
-                        if token_match:
-                            # Calculate similarity to the base name
-                            base_similarity = self.similarity_score(
-                                normalized_text, 
-                                base_name
-                            )
-                            
-                            # Boost the score for token matches
-                            adjusted_score = base_similarity * 1.2
-                            
-                            if adjusted_score >= threshold:
-                                matches.append({
-                                    'item': item,
-                                    'score': min(adjusted_score, 1.0)  # Cap at 1.0
-                                })
-        
-        # Fast pre-filtering using parts if available and we don't have matches yet
-        if not matches and parts.get('weapon') and parts.get('skin'):
-            weapon_norm = self.normalize_text(parts['weapon'])
-            skin_norm = self.normalize_text(parts['skin'])
-            
-            # First pass: check for items that contain both weapon and skin terms
-            for item in items:
-                if (weapon_norm in item.get('base_normalized', '') and 
-                    skin_norm in item.get('base_normalized', '')):
-                    # Calculate similarity to the base name (without wear)
-                    base_similarity = self.similarity_score(
-                        normalized_text, 
-                        item.get('base_normalized', '')
-                    )
-                    
-                    if base_similarity >= threshold:
-                        matches.append({
-                            'item': item,
-                            'score': base_similarity
-                        })
-        
-        # If no good matches found, try approximate matching with each item
-        if not matches:
-            for item in items:
-                # Get the best similarity score - either to the full name or base name
-                full_similarity = self.similarity_score(
-                    normalized_text, 
-                    item.get('normalized', '')
-                )
-                base_similarity = self.similarity_score(
-                    normalized_text, 
-                    item.get('base_normalized', '')
-                )
-                
-                # Also try matching just the weapon part or skin part
-                weapon_match = 0
-                skin_match = 0
-                
-                if parts.get('weapon'):
-                    weapon_norm = self.normalize_text(parts['weapon'])
-                    item_weapon = item.get('weapon', '')
-                    if item_weapon:
-                        weapon_match = self.similarity_score(
-                            weapon_norm,
-                            self.normalize_text(item_weapon)
-                        )
-                
-                if parts.get('skin'):
-                    skin_norm = self.normalize_text(parts['skin'])
-                    item_skin = item.get('skin_name', '')
-                    if item_skin:
-                        skin_match = self.similarity_score(
-                            skin_norm,
-                            self.normalize_text(item_skin)
-                        )
-                
-                # Calculate a weighted average if both weapon and skin matches exist
-                component_match = 0
-                if weapon_match > 0 and skin_match > 0:
-                    component_match = (weapon_match * 0.4 + skin_match * 0.6)
-                
-                # Take the best matching approach
-                max_similarity = max(full_similarity, base_similarity, component_match)
-                
-                if max_similarity >= threshold:
-                    matches.append({
-                        'item': item,
-                        'score': max_similarity
-                    })
-        
-        # Sort by score in descending order
-        matches.sort(key=lambda x: x['score'], reverse=True)
-        
-        # Return top N matches
+        matches = self._rank(normalized_text, items, threshold)
+        if item_type:
+            typed = self._rank(normalized_text,
+                               [item for item in items if item.get('item_type') == item_type],
+                               threshold)
+            # Prefer the detected type unless another type matches clearly better.
+            if typed and (not matches or typed[0]['score'] >= matches[0]['score'] - TYPE_MARGIN):
+                matches = typed
         return matches[:max_results]
+
+    def _rank(self, normalized_text, items, threshold):
+        """Score items against the text; best first, one entry per distinct name."""
+        # Fast path: items containing the first two significant OCR words.
+        # It only narrows the search; a weak best score falls back to all.
+        significant = [token for token in normalized_text.split() if len(token) > 2][:2]
+        candidates = [item for item in items
+                      if significant and all(token in item['normalized'] for token in significant)]
+        
+        def score_all(pool):
+            best = {}
+            for item in pool:
+                score = self.similarity_score(normalized_text, item['normalized'])
+                key = item['normalized']
+                if score >= threshold and (key not in best or score > best[key]['score']):
+                    best[key] = {'item': item, 'score': score}
+            return best
+        
+        scored = score_all(candidates)
+        if not scored or max(m['score'] for m in scored.values()) < FALLBACK_BELOW:
+            for key, match in score_all(items).items():
+                if key not in scored or match['score'] > scored[key]['score']:
+                    scored[key] = match
+        
+        return sorted(scored.values(), key=lambda m: m['score'], reverse=True)
     
     def get_all_wear_variations(self, base_item):
         """
@@ -426,7 +417,7 @@ class ItemMatcher:
         
         return variations
     
-    def match_with_confidence(self, extracted_text, threshold=0.4):
+    def match_with_confidence(self, extracted_text, threshold=MATCH_THRESHOLD, item_type=None):
         """
         Match extracted text to database items with confidence levels.
         
@@ -437,7 +428,7 @@ class ItemMatcher:
         Returns:
             Dict with status, matches, and best match
         """
-        matches = self.match_item(extracted_text, threshold=threshold)
+        matches = self.match_item(extracted_text, threshold=threshold, item_type=item_type)
         
         if not matches:
             return {
@@ -450,14 +441,8 @@ class ItemMatcher:
         best_match = matches[0]['item']
         all_variations = self.get_all_wear_variations(best_match)
         
-        # Determine confidence level based on score
         score = matches[0]['score']
-        if score > 0.85:
-            confidence = 'high'
-        elif score > 0.65:
-            confidence = 'medium'
-        else:
-            confidence = 'low'
+        confidence = self.confidence_label(score)
         
         # Convert all items to regular dictionaries to ensure they have .get() method
         all_variations_dicts = []
