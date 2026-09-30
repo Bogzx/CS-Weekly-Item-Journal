@@ -58,7 +58,12 @@ def verify_database(db_path="csgo_items.db"):
         return False
 
 if __name__ == "__main__":
-    verify_database()
+    import argparse
+    import sys
+
+    parser = argparse.ArgumentParser(description='Report the tables, row counts and sample rows of the item database')
+    parser.add_argument('--db', default='csgo_items.db', help='Path to SQLite database')
+    sys.exit(0 if verify_database(parser.parse_args().db) else 1)
 
 
 
