@@ -54,8 +54,11 @@ class TestBaseItemName:
         ('AK-47 | Redline (Field-Tested)', 'AK-47 | Redline'),
         ('Sawed-Off | Forest DDPAT (Battle-Scarred)', 'Sawed-Off | Forest DDPAT'),
         ('Revolution Case', 'Revolution Case'),
-        # A graffiti colour is a different market item, not a wear.
-        ('Sealed Graffiti | Sorry (Tiger Orange)', 'Sealed Graffiti | Sorry (Tiger Orange)'),
+        # OCR usually loses a graffiti's colour, so colours group like wears.
+        ('Sealed Graffiti | Sorry (Tiger Orange)', 'Sealed Graffiti | Sorry'),
+        ('Sealed Graffiti | Sorry', 'Sealed Graffiti | Sorry'),
+        # Other parentheses are part of the name.
+        ('Some Item (Holo)', 'Some Item (Holo)'),
         (None, ''),
     ])
     def test_strips_only_wears(self, appmod, name, expected):
@@ -146,6 +149,18 @@ class TestSlotValue:
 
         assert recommended == [results[0]]
         assert results[0]['value'] == 0.0
+
+
+    def test_graffiti_colours_form_one_family(self, appmod):
+        results = [slot(match('Sealed Graffiti | Sorry (Brick Red)', 0.09),
+                        match('Sealed Graffiti | Sorry (Shark White)', 0.03),
+                        match('Sealed Graffiti | Sorry (Tiger Orange)', 0.05))]
+
+        appmod.annotate_recommendation(results)
+
+        assert results[0]['value'] == 0.03
+        assert results[0]['variant_kind'] == 'colours'
+        assert results[0]['display_name'] == 'Sealed Graffiti | Sorry'
 
 
 class TestRecommendedPicks:
@@ -253,3 +268,38 @@ class TestResultsPage:
         assert [r.get('pick_rank') for r in results] == [1, None, 2, None]
         assert 'VALUATION_RULE=lowest' in html
         assert html.count(' checked>') == 2
+
+
+class TestGraffitiMatching:
+    @pytest.fixture
+    def graffiti_matcher(self, appmod, tmp_path, monkeypatch):
+        import sqlite3
+
+        from Src.ImageDetector.item_matcher import ItemMatcher
+
+        db = str(tmp_path / 'items.db')
+        conn = sqlite3.connect(db)
+        conn.execute("CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT, collection TEXT, "
+                     "price REAL, price_type TEXT, item_type TEXT)")
+        for colour, price in [('Brick Red', 0.09), ('Shark White', 0.03), ('Tiger Orange', 0.05)]:
+            conn.execute("INSERT INTO items (name, collection, price, item_type) VALUES (?, ?, ?, 'graffiti')",
+                         (f'Sealed Graffiti | Sorry ({colour})', 'Community Graffiti Box 1', price))
+        conn.execute("INSERT INTO items (name, collection, item_type) VALUES ('Revolution Case', 'Revolution Case', 'case')")
+        conn.commit()
+        conn.close()
+        monkeypatch.setattr(appmod, 'matcher', ItemMatcher(db))
+
+    def test_colour_lost_by_ocr_lists_every_colour(self, appmod, graffiti_matcher):
+        results = appmod.match_items_in_database(['Revolution Case', 'Sealed Graffiti | Sorry'])
+
+        names = sorted(m['name'] for m in results[1]['matches'])
+        assert names == ['Sealed Graffiti | Sorry (Brick Red)', 'Sealed Graffiti | Sorry (Shark White)',
+                         'Sealed Graffiti | Sorry (Tiger Orange)']
+        appmod.annotate_recommendation(results)
+        assert (results[1]['price_min'], results[1]['price_max']) == (0.03, 0.09)
+
+    def test_colour_read_by_ocr_selects_that_colour(self, appmod, graffiti_matcher):
+        results = appmod.match_items_in_database(['Revolution Case', 'Sealed Graffiti | Sorry (Tiger 0range)'])
+
+        assert [m['name'] for m in results[1]['matches']] == ['Sealed Graffiti | Sorry (Tiger Orange)']
+        assert results[1]['matches'][0]['price'] == 0.05
