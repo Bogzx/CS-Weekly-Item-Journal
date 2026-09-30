@@ -206,3 +206,16 @@ class TestEndToEnd:
 def test_old_csv_without_wears_column_still_gets_all_five():
     assert populate_database.skin_wears({'Weapon': 'AK-47', 'Skin': 'Redline'}) == (
         populate_database.WEAR_QUALITIES)
+
+
+def test_verify_database_reports_the_built_db(built_db, capsys):
+    from Src.DB import verify_database
+
+    assert verify_database.verify_database(built_db) is True
+    assert 'Row count: 16' in capsys.readouterr().out
+
+
+def test_verify_database_fails_for_a_missing_file(tmp_path):
+    from Src.DB import verify_database
+
+    assert verify_database.verify_database(str(tmp_path / 'nope.db')) is False
