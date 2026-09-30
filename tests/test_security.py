@@ -87,6 +87,19 @@ class TestSavePastedImage:
             assert img.format == 'JPEG'
 
 
+    def test_cmyk_jpeg_pasted_as_png_is_saved(self, appmod, tmp_path):
+        buf = io.BytesIO()
+        Image.new('CMYK', (8, 8)).save(buf, format='JPEG')
+        ext, data = appmod.decode_pasted_image(
+            'data:image/png;base64,' + base64.b64encode(buf.getvalue()).decode())
+        target = tmp_path / f'shot.{ext}'
+
+        appmod.save_pasted_image(data, str(target))
+
+        with Image.open(target) as img:
+            assert img.format == 'PNG'
+
+
 class TestIsSafeRedirect:
     @pytest.mark.parametrize('target', ['/', '/history', '/profile?tab=1'])
     def test_local_paths_allowed(self, appmod, target):
@@ -207,6 +220,83 @@ class TestRoutes:
         assert resp.status_code == 400
         assert resp.mimetype == 'text/html'
         assert b'No file or pasted image was received' in resp.data
+
+
+def eps_bytes(marker_path):
+    """A minimal EPS file whose PostScript creates `marker_path` if run."""
+    return (b"%!PS-Adobe-3.0 EPSF-3.0\n%%BoundingBox: 0 0 8 8\n"
+            b"(" + str(marker_path).encode() + b") (w) file closefile\nshowpage\n")
+
+
+class TestImageFormatAllowlist:
+    """Pillow used to probe every plugin it has. Loading an EPS runs
+    Ghostscript on the uploaded PostScript, and the GIF->PNG conversion path
+    did load it: a logged-in user could run PostScript on the server."""
+
+    def test_eps_is_rejected_without_running_ghostscript(self, appmod, tmp_path):
+        marker = tmp_path / 'ghostscript-ran'
+
+        with pytest.raises(ValueError):
+            appmod.image_format(eps_bytes(marker))
+        assert not marker.exists()
+
+    def test_eps_upload_is_refused(self, appmod, logged_in, monkeypatch, tmp_path):
+        marker = tmp_path / 'ghostscript-ran'
+        monkeypatch.setattr(appmod, 'process_image', lambda path: pytest.fail('pipeline reached'))
+
+        resp = logged_in.post('/upload', data={'file': (io.BytesIO(eps_bytes(marker)), 'shot.eps')},
+                              content_type='multipart/form-data')
+
+        assert resp.status_code == 400
+        assert not marker.exists()
+
+    def test_eps_pasted_as_png_is_refused(self, appmod, tmp_path):
+        marker = tmp_path / 'ghostscript-ran'
+        url = 'data:image/png;base64,' + base64.b64encode(eps_bytes(marker)).decode()
+
+        with pytest.raises(ValueError):
+            appmod.decode_pasted_image(url)
+        assert not marker.exists()
+
+    def test_other_pillow_formats_are_refused(self, appmod):
+        buf = io.BytesIO()
+        Image.new('RGB', (8, 8)).save(buf, format='TIFF')
+
+        with pytest.raises(ValueError):
+            appmod.image_format(buf.getvalue())
+
+    @pytest.mark.parametrize('fmt', ['PNG', 'JPEG', 'WEBP', 'BMP', 'GIF'])
+    def test_screenshot_formats_are_accepted(self, appmod, fmt):
+        buf = io.BytesIO()
+        Image.new('RGB', (8, 8)).save(buf, format=fmt)
+
+        assert appmod.image_format(buf.getvalue()) == fmt
+
+
+class TestImageSizeLimit:
+    def huge_png(self, appmod):
+        # Solid colour compresses to a few hundred KB: well under the upload
+        # limit, but ~45 MP once decoded.
+        side = int(appmod.MAX_IMAGE_PIXELS ** 0.5) + 100
+        buf = io.BytesIO()
+        Image.new('L', (side, side)).save(buf, format='PNG')
+        return buf.getvalue()
+
+    def test_image_over_the_pixel_limit_is_refused(self, appmod):
+        with pytest.raises(ValueError, match='megapixels'):
+            appmod.image_format(self.huge_png(appmod))
+
+    def test_huge_upload_never_reaches_the_pipeline(self, appmod, logged_in, monkeypatch):
+        monkeypatch.setattr(appmod, 'process_image', lambda path: pytest.fail('pipeline reached'))
+
+        resp = logged_in.post('/upload', data={'file': (io.BytesIO(self.huge_png(appmod)), 'shot.png')},
+                              content_type='multipart/form-data')
+
+        assert resp.status_code == 400
+        assert b'megapixels' in resp.data
+
+    def test_8k_screenshot_is_within_the_limit(self, appmod):
+        assert 7680 * 4320 <= appmod.MAX_IMAGE_PIXELS
 
 
 class TestLoginErrors:
