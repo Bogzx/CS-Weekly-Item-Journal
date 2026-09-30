@@ -1,14 +1,66 @@
 import cv2
-import numpy as np
 import easyocr
 from ultralytics import YOLO
 import os
 import tempfile
+from difflib import SequenceMatcher
 
 # Minimum YOLO confidence for a box to count as the weekly-drop panel.
 # Previously no threshold was passed at all, so ultralytics' permissive default
 # let near-noise detections through and they were treated as a real panel.
 DEFAULT_CONFIDENCE = 0.4
+
+# Vertical band of each card, as fractions of the detected panel's height,
+# that holds the item name. The name starts ~69% down and a second line (a
+# graffiti's colour, or a long name) ends ~80% down; "Free" sits at ~92%.
+# The band used to be 50%-75%, which cut the second line in half, so graffiti
+# colours were never read. Tuned on the labelled Training_Images with
+# tools/ocr_accuracy.py (see the review report for the numbers).
+TEXT_BAND = (0.62, 0.86)
+
+# EasyOCR reads text best at roughly 20-40 px cap height. Screenshots from
+# video thumbnails or shrunken uploads have 8-10 px text, so a text band
+# shorter than this many pixels is upscaled before OCR (at most MAX_UPSCALE x).
+MIN_TEXT_BAND_HEIGHT = 120
+MAX_UPSCALE = 4.0
+
+# UI text that shares the band with item names: the case slot's "Requires a
+# purchased key to open" box, and "Free" on some layouts. OCR garbles it
+# ("Requlres a purchascd", "Kcy to opcn"), so a line is dropped when most of
+# its words fuzzy-match these words, not only on an exact phrase.
+UI_WORDS = ('requires', 'purchased', 'key', 'to', 'open', 'free', 'a')
+UI_LINE_SHARE = 0.6
+
+
+def _is_ui_word(word):
+    word = word.lower().strip('!.,:;|')
+    if len(word) <= 2:
+        return word in UI_WORDS
+    # Short words need a close match ("kcy"/"key"); long ones tolerate more
+    # OCR damage but must not swallow real names ("operation" vs "open").
+    threshold = 0.6 if len(word) <= 4 else 0.7
+    return any(SequenceMatcher(None, word, ui).ratio() >= threshold
+               for ui in UI_WORDS if len(ui) > 2 and abs(len(ui) - len(word)) <= 3)
+
+
+def is_ui_text(line):
+    """True if an OCR line is (mostly) card UI text rather than an item name.
+
+    A single word only counts when it is exactly "Free": one-word fragments
+    such as "Fire" or "Reef" are parts of real item names.
+    """
+    words = line.split()
+    if not words:
+        return True
+    if len(words) == 1:
+        return words[0].lower().strip('!.,:;') == 'free'
+    return sum(_is_ui_word(word) for word in words) / len(words) >= UI_LINE_SHARE
+
+
+def _ends_like_case(line):
+    """The first line names a case ("Revolution Case", OCR'd as "Cose"/"Caso")."""
+    words = line.split()
+    return bool(words) and SequenceMatcher(None, words[-1].lower(), 'case').ratio() >= 0.5
 
 
 class DetectionError(RuntimeError):
@@ -20,6 +72,39 @@ class DetectionError(RuntimeError):
     and then fuzzy-matched them against the item database. The user got four
     confident, wrong item names with no indication anything had gone wrong.
     """
+
+
+def join_fragments(results_ocr):
+    """Join EasyOCR fragments into one line of text in reading order.
+
+    Fragments are grouped into lines top-to-bottom and read left-to-right.
+    UI lines (see is_ui_text) are dropped, and on a case card everything
+    under the name is dropped: that is where "Requires a purchased key to
+    open" sits, and any garbled remainder of it would only confuse matching.
+    """
+    fragments = []
+    for box, text, _confidence in results_ocr:
+        ys = [point[1] for point in box]
+        xs = [point[0] for point in box]
+        fragments.append((min(ys), max(ys), min(xs), text))
+    if not fragments:
+        return ''
+
+    # Group into lines: a fragment whose top lies above the middle of the
+    # current line's first fragment belongs to that line.
+    fragments.sort()
+    lines = []
+    for top, bottom, left, text in fragments:
+        if lines and top < lines[-1]['mid']:
+            lines[-1]['parts'].append((left, text))
+        else:
+            lines.append({'mid': (top + bottom) / 2, 'parts': [(left, text)]})
+
+    texts = [" ".join(text for _left, text in sorted(line['parts'])).strip() for line in lines]
+    texts = [text for text in texts if text and not is_ui_text(text)]
+    if texts and _ends_like_case(texts[0]):
+        texts = texts[:1]
+    return " ".join(texts).strip()
 
 
 class WeeklyDropProcessor:
@@ -34,8 +119,19 @@ class WeeklyDropProcessor:
         """
         self.model = YOLO(yolo_model_path)
         self.confidence = confidence
+        self.text_band = TEXT_BAND
+        self.min_text_band_height = MIN_TEXT_BAND_HEIGHT
+        self.max_upscale = MAX_UPSCALE
         # Initialize EasyOCR reader
         self.reader = easyocr.Reader(['en'])  # English language
+
+    def _upscale(self, region):
+        """Enlarge a short text band so EasyOCR sees legible glyphs."""
+        height = region.shape[0]
+        if height == 0 or height >= self.min_text_band_height:
+            return region
+        scale = min(self.min_text_band_height / height, self.max_upscale)
+        return cv2.resize(region, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
 
     def process_image(self, image_path, save_crops=False, output_dir=None,
                       allow_full_image_fallback=False):
@@ -133,21 +229,14 @@ class WeeklyDropProcessor:
                 crop_path = os.path.join(output_dir, crop_filename)
                 cv2.imwrite(crop_path, crop)
             
-            # First split the crop into upper and lower halves
+            # The item-name band of this card
             crop_height = crop.shape[0]
+            top, bottom = self.text_band
+            target_region = crop[int(crop_height * top):int(crop_height * bottom), :]
+            target_region = self._upscale(target_region)
             
-            # Extract the lower half
-            lower_half = crop[crop_height//2:, :]
-            
-            # Now take only the upper portion of the lower half (where item names typically appear)
-            lower_half_height = lower_half.shape[0]
-            target_region = lower_half[:lower_half_height//2, :]  # Upper half of the lower half
-            
-            # Save the cropped regions for inspection if requested
+            # Save the cropped region for inspection if requested
             if save_crops:
-                lower_half_path = os.path.join(output_dir, f"lower_half_{col}.jpg")
-                cv2.imwrite(lower_half_path, lower_half)
-                
                 target_region_path = os.path.join(output_dir, f"target_region_{col}.jpg")
                 cv2.imwrite(target_region_path, target_region)
             
@@ -155,8 +244,8 @@ class WeeklyDropProcessor:
             results_ocr = self.reader.readtext(target_region)
             
             # Extract text from OCR results
-            text = " ".join([result[1] for result in results_ocr])
-            detected_texts.append(text.strip())
+            text = join_fragments(results_ocr)
+            detected_texts.append(text)
             
             # Save the text to a file if requested
             if save_crops:

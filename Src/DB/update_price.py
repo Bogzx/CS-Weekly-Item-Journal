@@ -1,16 +1,43 @@
 import sqlite3
 import requests
-import json
 import time
 import argparse
 import os
 import random
+import re
 from datetime import datetime
 
 try:
     from steam_headers import STEAM_HEADERS, STEAM_TIMEOUT
 except ImportError:  # imported as Src.DB.update_price rather than run directly
     from Src.DB.steam_headers import STEAM_HEADERS, STEAM_TIMEOUT
+
+def now_timestamp():
+    """Local time as SQLite TEXT, the same format sqlite3's default datetime
+    adapter wrote (that adapter is deprecated since Python 3.12)."""
+    return datetime.now().isoformat(sep=' ')
+
+
+# priceoverview is requested without a `currency` parameter, so Steam answers
+# in USD: "$0.03", "$1,234.56". Anything else is refused rather than guessed.
+_USD_PRICE = re.compile(r'^\$\s*(\d{1,3}(?:,\d{3})*|\d+)(\.\d+)?(?:\s*USD)?$')
+
+
+def parse_steam_price(price_str):
+    """
+    Parse a priceoverview price string into a float
+    
+    Returns None for anything that is not a plain USD amount. The old
+    `float(s.replace('$', '').replace(',', ''))` raised on unexpected input and
+    would read a comma-decimal price such as "1,23" as 123.
+    """
+    if not isinstance(price_str, str):
+        return None
+    match = _USD_PRICE.match(price_str.strip())
+    if not match:
+        return None
+    return float(match.group(1).replace(',', '') + (match.group(2) or ''))
+
 
 def fetch_price(market_url, max_retries=3):
     """
@@ -49,17 +76,12 @@ def fetch_price(market_url, max_retries=3):
                 data = response.json()
                 
                 # Check if success
-                if data.get('success'):
-                    # Try to get lowest_price first
-                    if 'lowest_price' in data:
-                        price_str = data['lowest_price']
-                        price = float(price_str.replace('$', '').replace(',', ''))
-                        return price, 'lowest'
-                    # If lowest_price is not available, try median_price
-                    elif 'median_price' in data:
-                        price_str = data['median_price']
-                        price = float(price_str.replace('$', '').replace(',', ''))
-                        return price, 'median'
+                if isinstance(data, dict) and data.get('success'):
+                    # Prefer lowest_price, fall back to median_price
+                    for key, price_type in (('lowest_price', 'lowest'), ('median_price', 'median')):
+                        price = parse_steam_price(data.get(key))
+                        if price is not None:
+                            return price, price_type
             
             print(f"Failed to get price from {market_url}: {response.status_code} - {response.text}")
             return None, None
@@ -205,7 +227,7 @@ def update_prices(db_path, collection_filter=None, max_items=None, retry_on_rate
                     execute_with_retry(
                         conn,
                         "UPDATE items SET price = ?, price_type = ?, last_updated = ? WHERE id = ?",
-                        (price, price_type, datetime.now(), item_id)
+                        (price, price_type, now_timestamp(), item_id)
                     )
                     # Commit after each update to release locks faster
                     conn.commit()
@@ -229,7 +251,7 @@ def update_prices(db_path, collection_filter=None, max_items=None, retry_on_rate
     # Close connection
     conn.close()
     
-    print(f"\nSummary:")
+    print("\nSummary:")
     print(f"- Total items updated: {counter}")
     print(f"- Items with lowest price: {lowest_count}")
     print(f"- Items with median price: {median_count}")

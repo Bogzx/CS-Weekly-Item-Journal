@@ -39,6 +39,14 @@ jobs:
       - name: Show resolved versions
         run: pip freeze
 
+      - name: Check dependency consistency
+        run: pip check
+
+      - name: Lint (rules pinned in ruff.toml)
+        run: |
+          pip install ruff
+          ruff check .
+
       - name: Import the app without loading the model
         # app.py must import cleanly. The processor is lazy (see
         # get_processor()), so this stays fast and still catches syntax

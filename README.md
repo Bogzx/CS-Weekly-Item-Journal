@@ -6,14 +6,14 @@
 ![OpenCV](https://img.shields.io/badge/OpenCV-4.9%2B-red)
 ![Flask](https://img.shields.io/badge/Flask-3.0%2B-lightgrey)
 
-A web application that analyzes your CS2 weekly drop screenshots, identifies items with AI, compares prices, and helps you track your drops over time in a personal journal. The system automatically recommends the highest-value item to select based on current Steam Market prices.
+A web application that analyzes your CS2 weekly drop screenshots, identifies items with AI, compares prices, and helps you track your drops over time in a personal journal. It recommends which two of the four items to claim, based on stored Steam Market prices.
 
 ## 🚀 Features
 
 * **AI-Powered Item Detection** : Custom-trained YOLO model detects weekly drop boxes in screenshots
 * **Automatic Text Recognition** : Advanced OCR pipeline extracts item names from screenshots
 * **Intelligent Item Matching** : Sophisticated fuzzy matching algorithms correctly identify items despite OCR imperfections
-* **Price Comparison** : Automatically determines which item has the highest market value
+* **Price Comparison** : Values each of the four items and recommends the two worth claiming
 * **Real-time Price Tracking** : Automatic Steam Market price monitoring and updates
 * **User Journal System** : Track your drops over time and monitor your total collection value
 * **Drop History & EV** : Per-week charts of value added, cumulative collection value and expected value per drop
@@ -59,7 +59,7 @@ The extracted text is processed through a sophisticated matching system that:
 * Visual results display with confidence indicators
 * Personal journal system for tracking drops
 * Collection value monitoring
-* Recommendation of highest-value items
+* Recommendation of the two most valuable items (the game lets you claim two)
 
 ## 🛠️ Technologies Used
 
@@ -80,7 +80,6 @@ The extracted text is processed through a sophisticated matching system that:
 * **Python 3.11, 3.12 or 3.13.** The pipeline needs `ultralytics >= 8.3.94` to
   load the bundled YOLO11 weights, and `numpy >= 1.26` to install at all on
   3.12+.
-* **Node.js 18+** — only for `create_cs_skins.js`, which scrapes the skin list.
 * A GPU is **not** required. Detection runs on four small crops per screenshot
   and is fast enough on CPU.
 
@@ -118,32 +117,62 @@ one. Everything else has a working default.
 
 ### Build the item database
 
-> **Heads up:** this is the slow part. `create_cs_skins.js` scrapes a wiki and
-> the price steps make tens of thousands of Steam Market requests. Expect
-> hours. See [Owner follow-ups](#-known-gaps) — a prebuilt `csgo_items.db`
-> shipped as a Release asset would remove this step entirely.
+The item list comes from [ByMykel/CSGO-API](https://github.com/ByMykel/CSGO-API),
+an MIT-licensed JSON export of the CS2 game files: four downloads from
+raw.githubusercontent.com, no Steam requests and no Node.js. Prices come from
+the Steam Market and take longer (see below).
 
-All database scripts live in `Src/DB/`:
+All database scripts live in `Src/DB/` and are run from the repository root:
 
 ```bash
-# Create the empty schema
+# 1. Create the empty schema. Refuses to touch an existing database; use
+#    --force to rebuild only the item tables (accounts and journals are kept).
 python Src/DB/create_database.py
 
-# Generate the CS2 skin list (Node)
-node Src/DB/create_cs_skins.js
+# 2. Download the skin, case and graffiti lists (a few seconds) and write
+#    cs_skins.csv, cs_cases.csv, cs_graffiti.csv and cs_tools.csv. Pin a snapshot with
+#    --ref <commit>; add --include-knives-and-gloves if you want ★ items too.
+python Src/DB/fetch_item_lists.py
 
-# Generate the CS2 case list
-python Src/DB/create_cases.py
-
-# Populate the database from the generated data
+# 3. Load them into the database (~6,800 skin/wear rows, 42 cases, 91 sticker
+#    capsules, ~1,800 graffiti and the non-tradable Charm Detachment Pack)
 python Src/DB/populate_database.py
 
-# Fetch prices. bulk_scraper pulls 100 items per request -- prefer it.
-python Src/DB/bulk_scraper.py
-
-# Optional: add graffiti
-python Src/DB/graffiti_scraper.py
+# 4. Fetch prices for everything the weekly drop can offer: ~900 Steam
+#    requests, about 2.5 hours. See "Updating Prices".
+python Src/DB/bulk_scraper.py --drop-pool
 ```
+
+Steps 1–3 take seconds and are covered by an offline test
+(`tests/test_item_db_build.py`). Until step 4 has run, uploads work but show
+"no price data" and make no recommendation.
+
+Knives and gloves are left out by default: the weekly drop never offers them,
+and they share finish names with ordinary skins ("★ Butterfly Knife | Forest
+DDPAT"), so they only add wrong match candidates and thousands of rows to price.
+
+### Upgrading a database built with an older version
+
+Back up `csgo_items.db` first. Then:
+
+* **Accounts and journals are kept as they are.** `app.py` adds the new
+  columns when it starts. Journal entries store the item's name and price from
+  when you added them, so they do not depend on the item tables.
+* **Rebuild the item tables. Don't populate on top of the old ones.** Older
+  versions built the list from the fandom wiki, which named collections
+  differently (graffiti were under "Default Graffiti Collection"), and they
+  created all five wears for every skin. Running `populate_database.py` on that
+  database adds a second row for most items and keeps rows for wears that don't
+  exist. Instead, run `python Src/DB/create_database.py --force`, then steps
+  2–4 above. `--force` only drops `items`, `collections` and `test_table`, but
+  it also drops the stored prices, so the ~2.5 h price crawl has to run again.
+* **History weeks are regrouped.** Weeks are worked out when the page loads,
+  and nothing about them is stored. The default now starts each week at the
+  CS2 weekly reset (Wednesday 01:00 UTC). Older versions used Monday-based
+  weeks, so entries made on a Monday, a Tuesday or early on a Wednesday now
+  count towards the previous week. Week labels are ISO week numbers, which can
+  be one higher than the old ones for the same dates. `WEEK_BOUNDARY=iso`
+  brings back Monday weeks.
 
 ### Run
 
@@ -177,25 +206,71 @@ The system uses a SQLite database with the following key tables:
 1. **Register/Login** : Create an account to track your drops over time
 2. **Upload Screenshot** : Take a screenshot of your CS2 weekly drops screen and upload it
 3. **Review Results** : The system identifies items and displays matching candidates with price information
-4. **Select Item** : The highest-priced item is highlighted as the recommended choice and pre-selected
+4. **Select Items** : The two most valuable items are marked Pick 1 / Pick 2 and pre-selected (see [How items are valued](#-how-items-are-valued))
 5. **Add to Journal** : Confirm the correct items to add to your personal journal
-6. **Track Value** : Watch total value and per-drop expected value on the **History** page
+6. **Track Value** : Watch total value and per-drop expected value on the **History** page. Weeks run from one CS2 weekly reset to the next (Wednesday 01:00 UTC; `WEEK_BOUNDARY=iso` for Monday-based ISO weeks)
+
+## 💲 How items are valued
+
+The care-package screen names each item but does not show a skin's wear, so a
+skin slot matches up to five market items (Factory New … Battle-Scarred) whose
+prices can differ by 100×. The app:
+
+1. values a slot only over its **top match's own wear variants**, never over
+   other items that happened to fuzzy-match the OCR text;
+2. shows the price range (min–max over the priced wears) on each slot;
+3. counts one price from that range according to `VALUATION_RULE` (in `.env`):
+
+   | `VALUATION_RULE` | Slot value | Use it when |
+   |---|---|---|
+   | `lowest` (default) | cheapest wear | you want a floor: a pick is worth at least this |
+   | `median` | middle wear price | you want a typical value |
+   | `highest` | priciest wear (usually Factory New) | the old, optimistic behaviour |
+
+4. recommends the **two** highest-valued slots (the game lets you claim 2 of
+   the 4) and pre-selects the entry the value came from. Change it to the real
+   wear once you have claimed the item, so the journal records the right price.
+
+Graffiti are treated the same way when the scan misses the colour in brackets
+(it usually does): every colour is listed and valued as a range. When the
+colour is read, that exact colour is used. Cases have a single price, so the
+rule only changes how skins and colour-less graffiti compare to them.
+
+Drop items that cannot be sold (so far only the **Charm Detachment Pack**)
+match normally but show **Not tradable — $0** and are never recommended.
 
 ## 🔄 Updating Prices
 
-The scheduler runs a daily bulk price update automatically once the app is
-running. To update manually:
+The scheduler runs a daily bulk price update at 00:00 UTC once the app is
+running, using `price_update_config.json`. By default (`"drop_pool": true`) it
+crawls only what the weekly drop can offer, which is exactly what the database
+holds: normal-quality weapon skins, cases and graffiti. That is ~8,900 market
+items, ~900 requests, about 2.5 hours. To update manually:
 
 ```bash
-# Bulk update -- 100 items per Steam request. This is the fast path.
+# Recommended: the weekly-drop pool only (~2.5 hours)
+python Src/DB/bulk_scraper.py --drop-pool
+
+# The whole market. Steam returns at most 10 items per request and the scraper
+# waits 10 s between pages, so ~35k items take ~10 hours.
 python Src/DB/bulk_scraper.py
 
-# Restrict to specific collections
-python Src/DB/bulk_scraper.py --collections "Clutch Case" "Chroma Case"
+# Narrow it down: only cases (or graffiti), or a single search term
+python Src/DB/bulk_scraper.py --type case
+python Src/DB/bulk_scraper.py --query "Revolution Case"
 
-# Control how many items are fetched per request (default 100)
-python Src/DB/bulk_scraper.py --batch-size 100 --max 5000
+# Only write prices for specific collections (Steam is still crawled in full)
+python Src/DB/bulk_scraper.py --collections "Clutch Case" "The Clutch Collection"
+
+# Cap the number of market items fetched
+python Src/DB/bulk_scraper.py --drop-pool --max 5000
 ```
+
+The app picks up new prices on the next upload; no restart is needed.
+
+On HTTP 429 the scraper backs off (60 s, 120 s, honouring `Retry-After`). If
+Steam keeps refusing it stops, keeps the prices it already fetched, and exits
+with status 1 so the scheduled job logs a failure.
 
 `Src/DB/update_price.py` also exists and updates items one at a time. It sleeps
 15 seconds before **every** request, so a full refresh of a 20k-row database
@@ -219,8 +294,18 @@ committed screenshot and asserts the four item names still come out. It is slow
 (it downloads EasyOCR weights on first run) but it catches model-load breakage,
 `ultralytics` drift, EasyOCR changes and CS2 UI changes in one assertion.
 
-The unit tests around the recommendation logic and history aggregation are fast
-and need no model:
+`tools/ocr_accuracy.py` runs the pipeline over every hand-labelled screenshot
+in `Training_Images/` (labels: `tests/fixtures/expected_names.json`) and
+prints per-slot OCR accuracy; with `--db csgo_items.db` it also reports how
+often the app picks the right item. The slow suite fails if the aggregate
+drops below the tuned level.
+
+`tests/test_item_db_build.py` builds the item database end to end from
+committed ByMykel fixtures (no network) and checks that the result matches
+drops and takes Steam prices.
+
+Everything except the golden-image test is fast and needs neither the model
+nor the network:
 
 ```bash
 pytest -q -m "not slow"
@@ -229,13 +314,22 @@ pytest -q -m "not slow"
 ## 🕳️ Known gaps
 
 * **The YOLO model cannot currently be retrained.** No label files and no
-  `data.yaml` were ever committed, and `my_model/train/args.yaml:4` points at a
-  Google Colab path that no longer exists. `Models/BOX_TRAINED.pt` (mAP50
+  `data.yaml` were ever committed, and the training run's `args.yaml` (removed
+  from the tree, still in git history) points at a Google Colab path that no
+  longer exists. `Models/BOX_TRAINED.pt` (mAP50
   0.995) is therefore irreplaceable. Re-labelling is an owner task — see the
   pull request description for concrete steps.
-* **No prebuilt `csgo_items.db` ships.** Every new user pays hours of scraping.
-  Publishing one as a GitHub Release asset is the single biggest adoption
-  unlock.
+* **No prebuilt `csgo_items.db` ships.** The item list builds in seconds,
+  but the first price crawl takes ~2.5 hours because Steam serves 10 items
+  per request. A priced database published as a GitHub Release asset would make
+  the first run instant.
+* **Built for your own machine or LAN.** Logins are throttled per client IP
+  (per /64 for IPv6, in memory; not per account, so a botnet spreading guesses
+  over many addresses is not stopped) and every form POST carries a CSRF
+  token, but there is no
+  HTTPS, no password reset and no account deletion. Put it behind a TLS proxy
+  (and set `SESSION_COOKIE_SECURE=True`, and `TRUSTED_PROXIES=1` so the
+  login throttle sees real client addresses) before exposing it more widely.
 
 ## 🤝 Contributing
 

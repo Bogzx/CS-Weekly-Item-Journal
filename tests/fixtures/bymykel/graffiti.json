@@ -1,0 +1,32 @@
+[
+ {
+  "id": "graffiti-1734_3",
+  "name": "Sealed Graffiti | Sorry (Tiger Orange)",
+  "rarity": {
+   "id": "rarity_common",
+   "name": "Base Grade"
+  },
+  "crates": [],
+  "market_hash_name": "Sealed Graffiti | Sorry (Tiger Orange)"
+ },
+ {
+  "id": "graffiti-1734_19",
+  "name": "Sealed Graffiti | Sorry (Shark White)",
+  "rarity": {
+   "id": "rarity_common",
+   "name": "Base Grade"
+  },
+  "crates": [],
+  "market_hash_name": "Sealed Graffiti | Sorry (Shark White)"
+ },
+ {
+  "id": "graffiti-3560",
+  "name": "Sealed Graffiti | Astralis | Katowice 2019",
+  "rarity": {
+   "id": "rarity_rare",
+   "name": "High Grade"
+  },
+  "crates": [],
+  "market_hash_name": null
+ }
+]

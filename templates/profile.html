@@ -176,6 +176,13 @@
             color: #6c757d;
             margin-top: 3px;
         }
+        .logout-form {
+            display: inline;
+            margin: 0;
+        }
+        .logout-form .btn {
+            font-family: inherit;
+        }
     </style>
 </head>
 <body>
@@ -185,7 +192,10 @@
             <div>
                 <a href="{{ url_for('index') }}" class="btn btn-outline">Home</a>
                 <a href="{{ url_for('history') }}" class="btn btn-outline">History</a>
-                <a href="{{ url_for('logout') }}" class="btn">Logout</a>
+                <form method="post" action="{{ url_for('logout') }}" class="logout-form">
+                    {{ csrf_field() }}
+                    <button type="submit" class="btn">Logout</button>
+                </form>
             </div>
         </header>
         
@@ -224,6 +234,7 @@
                 <div class="journal-header">
                     <h2>Your Journal History</h2>
                     <form action="{{ url_for('clear_journal') }}" method="post" onsubmit="return confirm('Are you sure you want to clear your entire journal?');">
+                        {{ csrf_field() }}
                         <button type="submit" class="btn btn-outline">Clear Journal</button>
                     </form>
                 </div>
@@ -245,6 +256,7 @@
                             </div>
                         </div>
                         <form action="{{ url_for('remove_from_journal') }}" method="post">
+                            {{ csrf_field() }}
                             <input type="hidden" name="journal_id" value="{{ item.id }}">
                             <button type="submit" class="remove-btn" title="Remove from journal">×</button>
                         </form>
