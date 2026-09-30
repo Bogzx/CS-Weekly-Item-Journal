@@ -1,23 +1,32 @@
-import sqlite3
+import argparse
 import os
+import sqlite3
+import sys
 
-def create_csgo_database(db_path="csgo_items.db"):
+# Tables this script owns. app.py keeps `users` and `user_journals` in the same
+# file, so a rebuild must only ever touch these.
+ITEM_TABLES = ("items", "collections", "test_table")
+
+
+def create_csgo_database(db_path="csgo_items.db", force=False):
     """
-    Create a new SQLite database for CS:GO items if it doesn't exist.
+    Create the item tables in a SQLite database.
     
     Parameters:
     - db_path (str): Path to the SQLite database file
+    - force (bool): Rebuild the item tables if the database already exists
     
     Returns:
-    - bool: True if database was created, False if it already existed
+    - bool: True if the tables were created, False if the database already
+      existed and force was not given
     """
-    # If the database file exists already, delete it to ensure a clean start
-    if os.path.exists(db_path):
-        try:
-            os.remove(db_path)
-            print(f"Removed existing database: {db_path}")
-        except Exception as e:
-            print(f"Warning: Could not remove existing database: {e}")
+    # This used to os.remove() any existing file. app.py stores user accounts
+    # and journals in the same database, so re-running the first setup step
+    # silently deleted every user and their whole drop history.
+    if os.path.exists(db_path) and not force:
+        print(f"{db_path} already exists. Re-run with --force to rebuild the item "
+              f"tables; user accounts and journals are kept.")
+        return False
     
     # Connect to database (creates it if it doesn't exist)
     conn = sqlite3.connect(db_path)
@@ -27,6 +36,9 @@ def create_csgo_database(db_path="csgo_items.db"):
     cursor.execute("PRAGMA foreign_keys = ON")
     cursor.execute("PRAGMA journal_mode = WAL")
     
+    for table in ITEM_TABLES:
+        cursor.execute(f"DROP TABLE IF EXISTS {table}")
+    
     # Create items table
     cursor.execute('''
     CREATE TABLE items (
@@ -35,6 +47,7 @@ def create_csgo_database(db_path="csgo_items.db"):
         collection TEXT,
         market_api_url TEXT NOT NULL,
         price REAL,
+        price_type TEXT,
         last_updated TIMESTAMP,
         item_type TEXT,
         UNIQUE(name, collection)
@@ -64,12 +77,23 @@ def create_csgo_database(db_path="csgo_items.db"):
     conn.commit()
     conn.close()
     
-    print(f"Created new database at {db_path}")
+    print(f"Created item tables in {db_path}")
     return True
 
-if __name__ == "__main__":
-    create_csgo_database()
+def main(argv=None):
+    parser = argparse.ArgumentParser(description='Create the CS2 item database schema')
+    parser.add_argument('--db', type=str, default='csgo_items.db', help='Path to SQLite database')
+    parser.add_argument('--force', action='store_true',
+                        help='Rebuild the item tables of an existing database (keeps users and journals)')
+    args = parser.parse_args(argv)
+    
+    if not create_csgo_database(args.db, force=args.force):
+        return 1
     print("Database setup complete. Use populate_database.py to add items.")
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())
 
 
 '''
@@ -105,7 +129,8 @@ python create_database.py
 ```
 
 This will create a new database file named 'csgo_items.db' in the current directory.
-If a database with this name already exists, it will be deleted and recreated.
+If a database with this name already exists the script refuses to touch it; pass
+--force to drop and recreate the item tables (users and journals are kept).
 
 ## Functions
 - create_csgo_database(db_path): Creates a new SQLite database at the specified path
@@ -117,6 +142,7 @@ If a database with this name already exists, it will be deleted and recreated.
 ## Notes
 - The script uses WAL (Write-Ahead Logging) mode for better performance
 - Foreign key constraints are enabled
-- The script deletes any existing database with the same name to ensure a clean start
+- An existing database is left alone unless --force is given, and even then only
+  the item tables are rebuilt
 - After creating the database, use populate_database.py to add items
 '''
