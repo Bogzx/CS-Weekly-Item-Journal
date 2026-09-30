@@ -56,3 +56,13 @@ def logged_in(client):
     register(client, name)
     client.post('/login', data={'username': name, 'password': 'pw-123456'})
     return client
+
+
+@pytest.fixture(autouse=True)
+def _reset_login_throttle():
+    """Every test client shares 127.0.0.1, so failed logins in one test would
+    otherwise lock out the next. Only touches app.py if a test imported it."""
+    yield
+    app = sys.modules.get('app')
+    if app is not None:
+        app.login_throttle.reset()
