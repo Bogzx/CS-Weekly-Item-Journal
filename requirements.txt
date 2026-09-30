@@ -16,6 +16,8 @@
 #   Flask 3.1.3        Werkzeug 3.1.8       APScheduler 3.11.3
 #   Pillow 12.3.0      requests 2.34.2      python-dotenv 1.2.3
 # Models/BOX_TRAINED.pt loads and the golden-image test passes on that set.
+# Also verified 2026-09-30 on Python 3.12.14, Linux, CPU: torch 2.14.0+cpu,
+# ultralytics 8.4.166, opencv-python and opencv-python-headless 4.14.0.94.
 
 # --- Web framework ---
 Flask>=3.0,<4
@@ -38,7 +40,15 @@ torchvision>=0.17
 # thing that makes detection work at all.
 ultralytics>=8.3.94
 easyocr>=1.7.2
+# Two OpenCV distributions end up installed and both write the same `cv2`
+# package: ultralytics requires `opencv-python`, easyocr requires
+# `opencv-python-headless` (unpinned). Left alone, headless resolved to 5.x
+# next to opencv-python 4.x, so `cv2` was whichever wheel pip unpacked last --
+# possibly a mix of both. Holding both to the same range makes pip pick the
+# same release of each, so the overlapping files are identical and install
+# order stops mattering. tests/test_config.py checks the versions match.
 opencv-python>=4.9,<5
+opencv-python-headless>=4.9,<5
 
 # numpy 1.24.4 shipped wheels for cp38-cp311 only, so pip could not even
 # install it on Python 3.12/3.13. 1.26 is the first release with cp312 wheels.

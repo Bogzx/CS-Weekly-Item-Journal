@@ -39,6 +39,9 @@ jobs:
       - name: Show resolved versions
         run: pip freeze
 
+      - name: Check dependency consistency
+        run: pip check
+
       - name: Lint (syntax errors and undefined names only)
         run: |
           pip install ruff
