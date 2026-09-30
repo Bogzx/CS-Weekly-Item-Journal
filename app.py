@@ -56,9 +56,13 @@ def _env_bool(name, default):
 
 # Written to price_update_config.json on first run if it is missing. An empty
 # 'collections' list means "every collection".
+# 'drop_pool' limits the crawl to what the weekly drop offers (~9k market
+# items, ~2.5 h); without it the job walked the whole ~35k-item market by
+# name and stopped at max_items, which never reached most cases or graffiti.
 DEFAULT_PRICE_UPDATE_CONFIG = {
     "collections": [],
-    "max_items": 5000,
+    "drop_pool": True,
+    "max_items": 10000,
     "batch_size": 100,
 }
 
@@ -1617,6 +1621,10 @@ def update_prices_job():
         if collections:
             cmd.append('--collections')
             cmd.extend(collections)
+
+        # Only crawl the categories the item database holds
+        if config.get('drop_pool', True):
+            cmd.append('--drop-pool')
 
         # Add max items if specified
         if max_items:

@@ -86,6 +86,28 @@ BATCH_DELAY = 10
 STEAM_MAX_PAGE_SIZE = 10
 
 
+# Steam `category_730_Type` tags of the weapon classes that have skins.
+WEAPON_TYPE_TAGS = [
+    "tag_CSGO_Type_Pistol",
+    "tag_CSGO_Type_SMG",
+    "tag_CSGO_Type_Rifle",
+    "tag_CSGO_Type_SniperRifle",
+    "tag_CSGO_Type_Shotgun",
+    "tag_CSGO_Type_Machinegun",
+    "tag_CSGO_Type_Equipment",  # Zeus x27
+]
+
+# Everything the weekly care package can offer, and so everything
+# fetch_item_lists.py puts in the database: normal-quality (no StatTrak,
+# Souvenir or ★) weapon skins, cases and graffiti. Values in one category are
+# OR'ed, categories are AND'ed. Checked 2026-09-30: 8,942 market items
+# (~900 requests, ~2.5 h) against ~35,500 for the unfiltered market.
+DROP_POOL_FILTERS = {
+    "category_730_Quality": ["tag_normal"],
+    "category_730_Type": WEAPON_TYPE_TAGS + ["tag_CSGO_Type_WeaponCase", "tag_CSGO_Type_Spray"],
+}
+
+
 def _rate_limit_wait(response, attempt):
     """Seconds to sleep after a 429: Retry-After if Steam sent one, else backoff."""
     backoff = RATE_LIMIT_BACKOFF * (2 ** attempt)
@@ -339,7 +361,9 @@ def get_available_categories():
             "tag_CSGO_Type_Machinegun",
             "tag_CSGO_Type_Knife",
             "tag_Type_Hands",
-            "tag_CSGO_Type_Container",
+            "tag_CSGO_Type_Equipment",
+            "tag_CSGO_Type_WeaponCase",
+            "tag_CSGO_Type_Spray",
             "tag_CSGO_Tool_Sticker",
             "tag_CSGO_Tool_Patch",
             "tag_CSGO_Tool_Name_Tag",
@@ -379,7 +403,7 @@ def get_available_categories():
     
     return categories
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description='Bulk update CS2 item prices in the database')
     parser.add_argument('--db', type=str, default='csgo_items.db', help='Path to SQLite database')
     parser.add_argument('--collections', type=str, nargs='+', help='List of collections to update in database')
@@ -390,9 +414,12 @@ def main():
     parser.add_argument('--weapon', type=str, help='Filter by specific weapon (ak47, awp, etc.)')
     parser.add_argument('--exterior', type=str, help='Filter by exterior (factory-new, minimal-wear, etc.)')
     parser.add_argument('--query', type=str, help='Search query to filter items')
+    parser.add_argument('--drop-pool', action='store_true',
+                        help='Only crawl what the weekly drop can offer: normal-quality weapon skins, '
+                             'cases and graffiti (~9k items instead of ~35k); other filters narrow it further')
     parser.add_argument('--list-filters', action='store_true', help='List available filter options')
     
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     
     # If list-filters flag is set, show available filters and exit
     if args.list_filters:
@@ -411,7 +438,7 @@ def main():
         return 1
     
     # Build filters from command line arguments
-    filters = {}
+    filters = {k: list(v) for k, v in DROP_POOL_FILTERS.items()} if args.drop_pool else {}
     
     if args.type:
         if args.type.lower() == "knife":
@@ -425,7 +452,11 @@ def main():
         elif args.type.lower() == "smg":
             filters["category_730_Type"] = "tag_CSGO_Type_SMG"
         elif args.type.lower() == "container" or args.type.lower() == "case":
-            filters["category_730_Type"] = "tag_CSGO_Type_Container"
+            # "tag_CSGO_Type_Container" (used before) matches 0 market items,
+            # so --type case silently crawled nothing.
+            filters["category_730_Type"] = "tag_CSGO_Type_WeaponCase"
+        elif args.type.lower() in ("graffiti", "spray"):
+            filters["category_730_Type"] = "tag_CSGO_Type_Spray"
         elif args.type.lower() == "sticker":
             filters["category_730_Type"] = "tag_CSGO_Tool_Sticker"
         
@@ -553,10 +584,12 @@ items you fetch based on type, quality, weapon, exterior, and search terms.
 - --weapon: Filter by specific weapon (ak47, awp, etc.)
 - --exterior: Filter by exterior (factory-new, minimal-wear, etc.)
 - --query: Search query to filter items
+- --drop-pool: Only normal-quality weapon skins, cases and graffiti (what the
+  weekly drop offers and what the database holds): ~9k items, ~2.5 hours
 - --list-filters: List available filter options
 
 ## Available Filters
-- Types: pistol, rifle, sniper, smg, knife, container, sticker, etc.
+- Types: pistol, rifle, sniper, smg, knife, case (container), graffiti, sticker
 - Qualities: normal, stattrak, souvenir, knife/star
 - Weapons: ak47, awp, m4a4, m4a1s, knife, etc.
 - Exteriors: fn (Factory New), mw (Minimal Wear), ft (Field-Tested), etc.
