@@ -267,8 +267,12 @@ committed screenshot and asserts the four item names still come out. It is slow
 (it downloads EasyOCR weights on first run) but it catches model-load breakage,
 `ultralytics` drift, EasyOCR changes and CS2 UI changes in one assertion.
 
-The unit tests around the recommendation logic and history aggregation are fast
-and need no model:
+`tests/test_item_db_build.py` builds the item database end to end from
+committed ByMykel fixtures (no network) and checks that the result matches
+drops and takes Steam prices.
+
+Everything except the golden-image test is fast and needs neither the model
+nor the network:
 
 ```bash
 pytest -q -m "not slow"
