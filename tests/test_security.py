@@ -169,3 +169,18 @@ class TestRoutes:
         assert seen[0].endswith('.png')
         assert os.path.dirname(seen[0]) == appmod.app.config['UPLOAD_FOLDER']
         os.remove(seen[0])
+
+
+class TestLoginErrors:
+    def test_unknown_user_and_wrong_password_look_the_same(self, client):
+        name = f'user_{uuid.uuid4().hex[:8]}'
+        client.post('/register', data={
+            'username': name, 'email': f'{name}@example.com',
+            'password': 'pw', 'confirm_password': 'pw',
+        })
+
+        wrong_pw = client.post('/login', data={'username': name, 'password': 'nope'})
+        no_user = client.post('/login', data={'username': name + 'x', 'password': 'nope'})
+
+        assert b'Invalid username or password.' in wrong_pw.data
+        assert b'Invalid username or password.' in no_user.data
