@@ -1,0 +1,854 @@
+[
+{
+"id": "crate-4001",
+"name": "CS:GO Weapon Case",
+"type": "Case",
+"market_hash_name": "CS:GO Weapon Case"
+},
+{
+"id": "crate-4002",
+"name": "eSports 2013 Case",
+"type": "Case",
+"market_hash_name": "eSports 2013 Case"
+},
+{
+"id": "crate-4003",
+"name": "Operation Bravo Case",
+"type": "Case",
+"market_hash_name": "Operation Bravo Case"
+},
+{
+"id": "crate-4004",
+"name": "CS:GO Weapon Case 2",
+"type": "Case",
+"market_hash_name": "CS:GO Weapon Case 2"
+},
+{
+"id": "crate-4005",
+"name": "eSports 2013 Winter Case",
+"type": "Case",
+"market_hash_name": "eSports 2013 Winter Case"
+},
+{
+"id": "crate-4007",
+"name": "Sticker Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "Sticker Capsule"
+},
+{
+"id": "crate-4009",
+"name": "Winter Offensive Weapon Case",
+"type": "Case",
+"market_hash_name": "Winter Offensive Weapon Case"
+},
+{
+"id": "crate-4010",
+"name": "CS:GO Weapon Case 3",
+"type": "Case",
+"market_hash_name": "CS:GO Weapon Case 3"
+},
+{
+"id": "crate-4011",
+"name": "Operation Phoenix Weapon Case",
+"type": "Case",
+"market_hash_name": "Operation Phoenix Weapon Case"
+},
+{
+"id": "crate-4012",
+"name": "Sticker Capsule 2",
+"type": "Sticker Capsule",
+"market_hash_name": "Sticker Capsule 2"
+},
+{
+"id": "crate-4014",
+"name": "EMS Katowice 2014 Challengers",
+"type": "Sticker Capsule",
+"market_hash_name": "EMS Katowice 2014 Challengers"
+},
+{
+"id": "crate-4015",
+"name": "EMS Katowice 2014 Legends",
+"type": "Sticker Capsule",
+"market_hash_name": "EMS Katowice 2014 Legends"
+},
+{
+"id": "crate-4016",
+"name": "Community Sticker Capsule 1",
+"type": "Sticker Capsule",
+"market_hash_name": "Community Sticker Capsule 1"
+},
+{
+"id": "crate-4017",
+"name": "Huntsman Weapon Case",
+"type": "Case",
+"market_hash_name": "Huntsman Weapon Case"
+},
+{
+"id": "crate-4018",
+"name": "Operation Breakout Weapon Case",
+"type": "Case",
+"market_hash_name": "Operation Breakout Weapon Case"
+},
+{
+"id": "crate-4019",
+"name": "eSports 2014 Summer Case",
+"type": "Case",
+"market_hash_name": "eSports 2014 Summer Case"
+},
+{
+"id": "crate-4020",
+"name": "ESL One Cologne 2014 Legends",
+"type": "Sticker Capsule",
+"market_hash_name": "ESL One Cologne 2014 Legends"
+},
+{
+"id": "crate-4021",
+"name": "ESL One Cologne 2014 Challengers",
+"type": "Sticker Capsule",
+"market_hash_name": "ESL One Cologne 2014 Challengers"
+},
+{
+"id": "crate-4029",
+"name": "Operation Vanguard Weapon Case",
+"type": "Case",
+"market_hash_name": "Operation Vanguard Weapon Case"
+},
+{
+"id": "crate-4030",
+"name": "DreamHack 2014 Legends (Holo/Foil)",
+"type": "Sticker Capsule",
+"market_hash_name": "DreamHack 2014 Legends (Holo-Foil)"
+},
+{
+"id": "crate-4040",
+"name": "Cologne 2026 Sticker Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": null
+},
+{
+"id": "crate-4061",
+"name": "Chroma Case",
+"type": "Case",
+"market_hash_name": "Chroma Case"
+},
+{
+"id": "crate-4086",
+"name": "ESL One Katowice 2015 Legends (Holo/Foil)",
+"type": "Sticker Capsule",
+"market_hash_name": "ESL One Katowice 2015 Legends (Holo-Foil)"
+},
+{
+"id": "crate-4087",
+"name": "ESL One Katowice 2015 Challengers (Holo/Foil)",
+"type": "Sticker Capsule",
+"market_hash_name": "ESL One Katowice 2015 Challengers (Holo-Foil)"
+},
+{
+"id": "crate-4089",
+"name": "Chroma 2 Case",
+"type": "Case",
+"market_hash_name": "Chroma 2 Case"
+},
+{
+"id": "crate-4090",
+"name": "Enfu Sticker Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "Enfu Sticker Capsule"
+},
+{
+"id": "crate-4091",
+"name": "Falchion Case",
+"type": "Case",
+"market_hash_name": "Falchion Case"
+},
+{
+"id": "crate-4109",
+"name": "ESL One Cologne 2015 Legends (Foil)",
+"type": "Sticker Capsule",
+"market_hash_name": "ESL One Cologne 2015 Legends (Foil)"
+},
+{
+"id": "crate-4110",
+"name": "ESL One Cologne 2015 Challengers (Foil)",
+"type": "Sticker Capsule",
+"market_hash_name": "ESL One Cologne 2015 Challengers (Foil)"
+},
+{
+"id": "crate-4138",
+"name": "Shadow Case",
+"type": "Case",
+"market_hash_name": "Shadow Case"
+},
+{
+"id": "crate-4156",
+"name": "DreamHack Cluj-Napoca 2015 Legends (Foil)",
+"type": "Sticker Capsule",
+"market_hash_name": "DreamHack Cluj-Napoca 2015 Legends (Foil)"
+},
+{
+"id": "crate-4157",
+"name": "DreamHack Cluj-Napoca 2015 Challengers (Foil)",
+"type": "Sticker Capsule",
+"market_hash_name": "DreamHack Cluj-Napoca 2015 Challengers (Foil)"
+},
+{
+"id": "crate-4183",
+"name": "Pinups Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "Pinups Capsule"
+},
+{
+"id": "crate-4184",
+"name": "Slid3 Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "Slid3 Capsule"
+},
+{
+"id": "crate-4185",
+"name": "Team Roles Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "Team Roles Capsule"
+},
+{
+"id": "crate-4186",
+"name": "Revolver Case",
+"type": "Case",
+"market_hash_name": "Revolver Case"
+},
+{
+"id": "crate-4187",
+"name": "Operation Wildfire Case",
+"type": "Case",
+"market_hash_name": "Operation Wildfire Case"
+},
+{
+"id": "crate-4205",
+"name": "MLG Columbus 2016 Legends (Holo/Foil)",
+"type": "Sticker Capsule",
+"market_hash_name": "MLG Columbus 2016 Legends (Holo-Foil)"
+},
+{
+"id": "crate-4206",
+"name": "MLG Columbus 2016 Challengers (Holo/Foil)",
+"type": "Sticker Capsule",
+"market_hash_name": "MLG Columbus 2016 Challengers (Holo-Foil)"
+},
+{
+"id": "crate-4233",
+"name": "Chroma 3 Case",
+"type": "Case",
+"market_hash_name": "Chroma 3 Case"
+},
+{
+"id": "crate-4236",
+"name": "Gamma Case",
+"type": "Case",
+"market_hash_name": "Gamma Case"
+},
+{
+"id": "crate-4254",
+"name": "Cologne 2016 Legends (Holo/Foil)",
+"type": "Sticker Capsule",
+"market_hash_name": "Cologne 2016 Legends (Holo-Foil)"
+},
+{
+"id": "crate-4255",
+"name": "Cologne 2016 Challengers (Holo/Foil)",
+"type": "Sticker Capsule",
+"market_hash_name": "Cologne 2016 Challengers (Holo-Foil)"
+},
+{
+"id": "crate-4281",
+"name": "Gamma 2 Case",
+"type": "Case",
+"market_hash_name": "Gamma 2 Case"
+},
+{
+"id": "crate-4282",
+"name": "Sugarface Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "Sugarface Capsule"
+},
+{
+"id": "crate-4283",
+"name": "Bestiary Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "Bestiary Capsule"
+},
+{
+"id": "crate-4288",
+"name": "Glove Case",
+"type": "Case",
+"market_hash_name": "Glove Case"
+},
+{
+"id": "crate-4323",
+"name": "Atlanta 2017 Legends (Holo/Foil)",
+"type": "Sticker Capsule",
+"market_hash_name": "Atlanta 2017 Legends (Holo-Foil)"
+},
+{
+"id": "crate-4324",
+"name": "Atlanta 2017 Challengers (Holo/Foil)",
+"type": "Sticker Capsule",
+"market_hash_name": "Atlanta 2017 Challengers (Holo-Foil)"
+},
+{
+"id": "crate-4351",
+"name": "Spectrum Case",
+"type": "Case",
+"market_hash_name": "Spectrum Case"
+},
+{
+"id": "crate-4352",
+"name": "Operation Hydra Case",
+"type": "Case",
+"market_hash_name": "Operation Hydra Case"
+},
+{
+"id": "crate-4391",
+"name": "Krakow 2017 Legends (Holo/Foil)",
+"type": "Sticker Capsule",
+"market_hash_name": "Krakow 2017 Legends (Holo-Foil)"
+},
+{
+"id": "crate-4392",
+"name": "Krakow 2017 Challengers (Holo/Foil)",
+"type": "Sticker Capsule",
+"market_hash_name": "Krakow 2017 Challengers (Holo-Foil)"
+},
+{
+"id": "crate-4403",
+"name": "Spectrum 2 Case",
+"type": "Case",
+"market_hash_name": "Spectrum 2 Case"
+},
+{
+"id": "crate-4404",
+"name": "Perfect World Sticker Capsule 1",
+"type": "Sticker Capsule",
+"market_hash_name": "Perfect World Sticker Capsule 1"
+},
+{
+"id": "crate-4405",
+"name": "Perfect World Sticker Capsule 2",
+"type": "Sticker Capsule",
+"market_hash_name": "Perfect World Sticker Capsule 2"
+},
+{
+"id": "crate-4456",
+"name": "Boston 2018 Legends (Holo/Foil)",
+"type": "Sticker Capsule",
+"market_hash_name": "Boston 2018 Legends (Holo-Foil)"
+},
+{
+"id": "crate-4457",
+"name": "Boston 2018 Returning Challengers (Holo/Foil)",
+"type": "Sticker Capsule",
+"market_hash_name": "Boston 2018 Returning Challengers (Holo-Foil)"
+},
+{
+"id": "crate-4458",
+"name": "Boston 2018 Minor Challengers (Holo/Foil)",
+"type": "Sticker Capsule",
+"market_hash_name": "Boston 2018 Minor Challengers (Holo-Foil)"
+},
+{
+"id": "crate-4470",
+"name": "Community Capsule 2018",
+"type": "Sticker Capsule",
+"market_hash_name": "Community Capsule 2018"
+},
+{
+"id": "crate-4471",
+"name": "Clutch Case",
+"type": "Case",
+"market_hash_name": "Clutch Case"
+},
+{
+"id": "crate-4474",
+"name": "Boston 2018 Minor Challengers with Flash Gaming (Holo/Foil)",
+"type": "Sticker Capsule",
+"market_hash_name": "Boston 2018 Minor Challengers with Flash Gaming (Holo-Foil)"
+},
+{
+"id": "crate-4477",
+"name": "Chicken Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "Chicken Capsule"
+},
+{
+"id": "crate-4478",
+"name": "Boston 2018 Attending Legends (Holo/Foil)",
+"type": "Sticker Capsule",
+"market_hash_name": "Boston 2018 Attending Legends (Holo-Foil)"
+},
+{
+"id": "crate-4482",
+"name": "Horizon Case",
+"type": "Case",
+"market_hash_name": "Horizon Case"
+},
+{
+"id": "crate-4533",
+"name": "London 2018 Legends (Holo/Foil)",
+"type": "Sticker Capsule",
+"market_hash_name": "London 2018 Legends (Holo-Foil)"
+},
+{
+"id": "crate-4534",
+"name": "London 2018 Returning Challengers (Holo/Foil)",
+"type": "Sticker Capsule",
+"market_hash_name": "London 2018 Returning Challengers (Holo-Foil)"
+},
+{
+"id": "crate-4535",
+"name": "London 2018 Minor Challengers (Holo/Foil)",
+"type": "Sticker Capsule",
+"market_hash_name": "London 2018 Minor Challengers (Holo-Foil)"
+},
+{
+"id": "crate-4547",
+"name": "Skill Groups Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "Skill Groups Capsule"
+},
+{
+"id": "crate-4548",
+"name": "Danger Zone Case",
+"type": "Case",
+"market_hash_name": "Danger Zone Case"
+},
+{
+"id": "crate-4584",
+"name": "Katowice 2019 Legends (Holo/Foil)",
+"type": "Sticker Capsule",
+"market_hash_name": "Katowice 2019 Legends (Holo-Foil)"
+},
+{
+"id": "crate-4585",
+"name": "Katowice 2019 Returning Challengers (Holo/Foil)",
+"type": "Sticker Capsule",
+"market_hash_name": "Katowice 2019 Returning Challengers (Holo-Foil)"
+},
+{
+"id": "crate-4586",
+"name": "Katowice 2019 Minor Challengers (Holo/Foil)",
+"type": "Sticker Capsule",
+"market_hash_name": "Katowice 2019 Minor Challengers (Holo-Foil)"
+},
+{
+"id": "crate-4597",
+"name": "Halo Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "Halo Capsule"
+},
+{
+"id": "crate-4598",
+"name": "Prisma Case",
+"type": "Case",
+"market_hash_name": "Prisma Case"
+},
+{
+"id": "crate-4599",
+"name": "Feral Predators Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "Feral Predators Capsule"
+},
+{
+"id": "crate-4600",
+"name": "Shattered Web Sticker Collection",
+"type": "Sticker Capsule",
+"market_hash_name": null
+},
+{
+"id": "crate-4616",
+"name": "Warhammer 40,000 Sticker Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "Warhammer 40,000 Sticker Capsule"
+},
+{
+"id": "crate-4620",
+"name": "Shattered Web Case",
+"type": "Case",
+"market_hash_name": "Shattered Web Case"
+},
+{
+"id": "crate-4654",
+"name": "Berlin 2019 Legends (Holo/Foil)",
+"type": "Sticker Capsule",
+"market_hash_name": "Berlin 2019 Legends (Holo-Foil)"
+},
+{
+"id": "crate-4655",
+"name": "Berlin 2019 Returning Challengers (Holo/Foil)",
+"type": "Sticker Capsule",
+"market_hash_name": "Berlin 2019 Returning Challengers (Holo-Foil)"
+},
+{
+"id": "crate-4656",
+"name": "Berlin 2019 Minor Challengers (Holo/Foil)",
+"type": "Sticker Capsule",
+"market_hash_name": "Berlin 2019 Minor Challengers (Holo-Foil)"
+},
+{
+"id": "crate-4669",
+"name": "CS20 Case",
+"type": "Case",
+"market_hash_name": "CS20 Case"
+},
+{
+"id": "crate-4670",
+"name": "CS20 Sticker Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "CS20 Sticker Capsule"
+},
+{
+"id": "crate-4694",
+"name": "Half-Life: Alyx Sticker Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "Half-Life: Alyx Sticker Capsule"
+},
+{
+"id": "crate-4695",
+"name": "Prisma 2 Case",
+"type": "Case",
+"market_hash_name": "Prisma 2 Case"
+},
+{
+"id": "crate-4698",
+"name": "Fracture Case",
+"type": "Case",
+"market_hash_name": "Fracture Case"
+},
+{
+"id": "crate-4717",
+"name": "Operation Broken Fang Case",
+"type": "Case",
+"market_hash_name": "Operation Broken Fang Case"
+},
+{
+"id": "crate-4719",
+"name": "Recoil Sticker Collection",
+"type": "Sticker Capsule",
+"market_hash_name": null
+},
+{
+"id": "crate-4729",
+"name": "Broken Fang Sticker Collection",
+"type": "Sticker Capsule",
+"market_hash_name": null
+},
+{
+"id": "crate-4743",
+"name": "2020 RMR Legends",
+"type": "Sticker Capsule",
+"market_hash_name": "2020 RMR Legends"
+},
+{
+"id": "crate-4744",
+"name": "2020 RMR Challengers",
+"type": "Sticker Capsule",
+"market_hash_name": "2020 RMR Challengers"
+},
+{
+"id": "crate-4745",
+"name": "2020 RMR Contenders",
+"type": "Sticker Capsule",
+"market_hash_name": "2020 RMR Contenders"
+},
+{
+"id": "crate-4746",
+"name": "Poorly Drawn Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "Poorly Drawn Capsule"
+},
+{
+"id": "crate-4747",
+"name": "Snakebite Case",
+"type": "Case",
+"market_hash_name": "Snakebite Case"
+},
+{
+"id": "crate-4779",
+"name": "Riptide Surf Shop Sticker Collection",
+"type": "Sticker Capsule",
+"market_hash_name": null
+},
+{
+"id": "crate-4782",
+"name": "2021 Community Sticker Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "2021 Community Sticker Capsule"
+},
+{
+"id": "crate-4783",
+"name": "Operation Riptide Sticker Collection",
+"type": "Sticker Capsule",
+"market_hash_name": null
+},
+{
+"id": "crate-4784",
+"name": "The Boardroom Sticker Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "The Boardroom Sticker Capsule"
+},
+{
+"id": "crate-4789",
+"name": "Battlefield 2042 Sticker Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "Battlefield 2042 Sticker Capsule"
+},
+{
+"id": "crate-4790",
+"name": "Operation Riptide Case",
+"type": "Case",
+"market_hash_name": "Operation Riptide Case"
+},
+{
+"id": "crate-4803",
+"name": "Stockholm 2021 Legends Sticker Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "Stockholm 2021 Legends Sticker Capsule"
+},
+{
+"id": "crate-4804",
+"name": "Stockholm 2021 Challengers Sticker Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "Stockholm 2021 Challengers Sticker Capsule"
+},
+{
+"id": "crate-4805",
+"name": "Stockholm 2021 Contenders Sticker Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "Stockholm 2021 Contenders Sticker Capsule"
+},
+{
+"id": "crate-4818",
+"name": "Dreams & Nightmares Case",
+"type": "Case",
+"market_hash_name": "Dreams & Nightmares Case"
+},
+{
+"id": "crate-4832",
+"name": "Antwerp 2022 Legends Sticker Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "Antwerp 2022 Legends Sticker Capsule"
+},
+{
+"id": "crate-4833",
+"name": "Antwerp 2022 Challengers Sticker Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "Antwerp 2022 Challengers Sticker Capsule"
+},
+{
+"id": "crate-4834",
+"name": "Antwerp 2022 Contenders Sticker Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "Antwerp 2022 Contenders Sticker Capsule"
+},
+{
+"id": "crate-4846",
+"name": "Recoil Case",
+"type": "Case",
+"market_hash_name": "Recoil Case"
+},
+{
+"id": "crate-4847",
+"name": "10 Year Birthday Sticker Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "10 Year Birthday Sticker Capsule"
+},
+{
+"id": "crate-4857",
+"name": "Rio 2022 Legends Sticker Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "Rio 2022 Legends Sticker Capsule"
+},
+{
+"id": "crate-4858",
+"name": "Rio 2022 Challengers Sticker Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "Rio 2022 Challengers Sticker Capsule"
+},
+{
+"id": "crate-4859",
+"name": "Rio 2022 Contenders Sticker Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "Rio 2022 Contenders Sticker Capsule"
+},
+{
+"id": "crate-4879",
+"name": "Espionage Sticker Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "Espionage Sticker Capsule"
+},
+{
+"id": "crate-4880",
+"name": "Revolution Case",
+"type": "Case",
+"market_hash_name": "Revolution Case"
+},
+{
+"id": "crate-4890",
+"name": "Paris 2023 Legends Sticker Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "Paris 2023 Legends Sticker Capsule"
+},
+{
+"id": "crate-4891",
+"name": "Paris 2023 Challengers Sticker Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "Paris 2023 Challengers Sticker Capsule"
+},
+{
+"id": "crate-4892",
+"name": "Paris 2023 Contenders Sticker Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "Paris 2023 Contenders Sticker Capsule"
+},
+{
+"id": "crate-4904",
+"name": "Kilowatt Case",
+"type": "Case",
+"market_hash_name": "Kilowatt Case"
+},
+{
+"id": "crate-4905",
+"name": "Ambush Sticker Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "Ambush Sticker Capsule"
+},
+{
+"id": "crate-4923",
+"name": "Copenhagen 2024 Legends Sticker Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "Copenhagen 2024 Legends Sticker Capsule"
+},
+{
+"id": "crate-4924",
+"name": "Copenhagen 2024 Challengers Sticker Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "Copenhagen 2024 Challengers Sticker Capsule"
+},
+{
+"id": "crate-4925",
+"name": "Copenhagen 2024 Contenders Sticker Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "Copenhagen 2024 Contenders Sticker Capsule"
+},
+{
+"id": "crate-4964",
+"name": "Shanghai 2024 Legends Sticker Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "Shanghai 2024 Legends Sticker Capsule"
+},
+{
+"id": "crate-4965",
+"name": "Shanghai 2024 Challengers Sticker Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "Shanghai 2024 Challengers Sticker Capsule"
+},
+{
+"id": "crate-4966",
+"name": "Shanghai 2024 Contenders Sticker Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "Shanghai 2024 Contenders Sticker Capsule"
+},
+{
+"id": "crate-5117",
+"name": "Austin 2025 Legends Sticker Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "Austin 2025 Legends Sticker Capsule"
+},
+{
+"id": "crate-5118",
+"name": "Austin 2025 Challengers Sticker Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "Austin 2025 Challengers Sticker Capsule"
+},
+{
+"id": "crate-5119",
+"name": "Austin 2025 Contenders Sticker Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "Austin 2025 Contenders Sticker Capsule"
+},
+{
+"id": "crate-5216",
+"name": "Budapest 2025 Legends Sticker Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "Budapest 2025 Legends Sticker Capsule"
+},
+{
+"id": "crate-5217",
+"name": "Budapest 2025 Challengers Sticker Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "Budapest 2025 Challengers Sticker Capsule"
+},
+{
+"id": "crate-5218",
+"name": "Budapest 2025 Contenders Sticker Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "Budapest 2025 Contenders Sticker Capsule"
+},
+{
+"id": "crate-5316",
+"name": "Cologne 2026 Sticker Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": null
+},
+{
+"id": "crate-5317",
+"name": "Cologne 2026 Team Sticker Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": null
+},
+{
+"id": "crate-5329",
+"name": "Cologne 2026 Sticker Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": null
+},
+{
+"id": "crate-7003",
+"name": "Gallery Case",
+"type": "Case",
+"market_hash_name": "Gallery Case"
+},
+{
+"id": "crate-7007",
+"name": "Fever Case",
+"type": "Case",
+"market_hash_name": "Fever Case"
+},
+{
+"id": "crate-7011",
+"name": "Warhammer 40,000 Traitor Astartes Sticker Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "Warhammer 40,000 Traitor Astartes Sticker Capsule"
+},
+{
+"id": "crate-7013",
+"name": "Warhammer 40,000 Adeptus Astartes Sticker Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "Warhammer 40,000 Adeptus Astartes Sticker Capsule"
+},
+{
+"id": "crate-7015",
+"name": "Warhammer 40,000 Imperium Sticker Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "Warhammer 40,000 Imperium Sticker Capsule"
+},
+{
+"id": "crate-7017",
+"name": "Warhammer 40,000 Xenos Sticker Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "Warhammer 40,000 Xenos Sticker Capsule"
+},
+{
+"id": "crate-7041",
+"name": "Jackass Sticker Capsule",
+"type": "Sticker Capsule",
+"market_hash_name": "Jackass Sticker Capsule"
+}
+]

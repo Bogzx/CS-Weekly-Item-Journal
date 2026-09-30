@@ -1,0 +1,272 @@
+[
+ {
+  "id": "skin-e34d4776c3fa",
+  "name": "Sawed-Off | Forest DDPAT",
+  "weapon": {
+   "id": "weapon_sawedoff",
+   "name": "Sawed-Off"
+  },
+  "rarity": {
+   "id": "rarity_common_weapon",
+   "name": "Consumer Grade"
+  },
+  "wears": [
+   {
+    "id": "SFUI_InvTooltip_Wear_Amount_0",
+    "name": "Factory New"
+   },
+   {
+    "id": "SFUI_InvTooltip_Wear_Amount_1",
+    "name": "Minimal Wear"
+   },
+   {
+    "id": "SFUI_InvTooltip_Wear_Amount_2",
+    "name": "Field-Tested"
+   },
+   {
+    "id": "SFUI_InvTooltip_Wear_Amount_3",
+    "name": "Well-Worn"
+   },
+   {
+    "id": "SFUI_InvTooltip_Wear_Amount_4",
+    "name": "Battle-Scarred"
+   }
+  ],
+  "collections": [
+   {
+    "id": "collection-set-bank",
+    "name": "The Bank Collection"
+   }
+  ],
+  "crates": []
+ },
+ {
+  "id": "skin-9d918c84051e",
+  "name": "AUG | Anodized Navy",
+  "weapon": {
+   "id": "weapon_aug",
+   "name": "AUG"
+  },
+  "rarity": {
+   "id": "rarity_rare_weapon",
+   "name": "Mil-Spec Grade"
+  },
+  "wears": [
+   {
+    "id": "SFUI_InvTooltip_Wear_Amount_0",
+    "name": "Factory New"
+   },
+   {
+    "id": "SFUI_InvTooltip_Wear_Amount_1",
+    "name": "Minimal Wear"
+   }
+  ],
+  "collections": [
+   {
+    "id": "collection-set-bravo-ii",
+    "name": "The Alpha Collection"
+   }
+  ],
+  "crates": []
+ },
+ {
+  "id": "skin-8b02c7193eec",
+  "name": "★ Bayonet | Rust Coat",
+  "weapon": {
+   "id": "weapon_bayonet",
+   "name": "Bayonet"
+  },
+  "rarity": {
+   "id": "rarity_ancient_weapon",
+   "name": "Covert"
+  },
+  "wears": [
+   {
+    "id": "SFUI_InvTooltip_Wear_Amount_3",
+    "name": "Well-Worn"
+   },
+   {
+    "id": "SFUI_InvTooltip_Wear_Amount_4",
+    "name": "Battle-Scarred"
+   }
+  ],
+  "collections": [],
+  "crates": [
+   {
+    "id": "crate-4061",
+    "name": "Chroma Case"
+   },
+   {
+    "id": "crate-4089",
+    "name": "Chroma 2 Case"
+   }
+  ]
+ },
+ {
+  "id": "skin-a841a452bb30",
+  "name": "Glock-18 | Gamma Doppler",
+  "weapon": {
+   "id": "weapon_glock",
+   "name": "Glock-18"
+  },
+  "rarity": {
+   "id": "rarity_ancient_weapon",
+   "name": "Covert"
+  },
+  "wears": [
+   {
+    "id": "SFUI_InvTooltip_Wear_Amount_0",
+    "name": "Factory New"
+   },
+   {
+    "id": "SFUI_InvTooltip_Wear_Amount_1",
+    "name": "Minimal Wear"
+   },
+   {
+    "id": "SFUI_InvTooltip_Wear_Amount_2",
+    "name": "Field-Tested"
+   },
+   {
+    "id": "SFUI_InvTooltip_Wear_Amount_3",
+    "name": "Well-Worn"
+   },
+   {
+    "id": "SFUI_InvTooltip_Wear_Amount_4",
+    "name": "Battle-Scarred"
+   }
+  ],
+  "collections": [
+   {
+    "id": "collection-set-train-2021",
+    "name": "The 2021 Train Collection"
+   }
+  ],
+  "crates": []
+ },
+ {
+  "id": "skin-45d3638f698c",
+  "name": "Glock-18 | Gamma Doppler",
+  "weapon": {
+   "id": "weapon_glock",
+   "name": "Glock-18"
+  },
+  "rarity": {
+   "id": "rarity_ancient_weapon",
+   "name": "Covert"
+  },
+  "wears": [
+   {
+    "id": "SFUI_InvTooltip_Wear_Amount_0",
+    "name": "Factory New"
+   },
+   {
+    "id": "SFUI_InvTooltip_Wear_Amount_1",
+    "name": "Minimal Wear"
+   },
+   {
+    "id": "SFUI_InvTooltip_Wear_Amount_2",
+    "name": "Field-Tested"
+   },
+   {
+    "id": "SFUI_InvTooltip_Wear_Amount_3",
+    "name": "Well-Worn"
+   },
+   {
+    "id": "SFUI_InvTooltip_Wear_Amount_4",
+    "name": "Battle-Scarred"
+   }
+  ],
+  "collections": [
+   {
+    "id": "collection-set-train-2021",
+    "name": "The 2021 Train Collection"
+   }
+  ],
+  "crates": []
+ },
+ {
+  "id": "skin-a54b82c79b59",
+  "name": "★ Butterfly Knife | Forest DDPAT",
+  "weapon": {
+   "id": "weapon_knife_butterfly",
+   "name": "Butterfly Knife"
+  },
+  "rarity": {
+   "id": "rarity_ancient_weapon",
+   "name": "Covert"
+  },
+  "wears": [
+   {
+    "id": "SFUI_InvTooltip_Wear_Amount_0",
+    "name": "Factory New"
+   },
+   {
+    "id": "SFUI_InvTooltip_Wear_Amount_1",
+    "name": "Minimal Wear"
+   },
+   {
+    "id": "SFUI_InvTooltip_Wear_Amount_2",
+    "name": "Field-Tested"
+   },
+   {
+    "id": "SFUI_InvTooltip_Wear_Amount_3",
+    "name": "Well-Worn"
+   },
+   {
+    "id": "SFUI_InvTooltip_Wear_Amount_4",
+    "name": "Battle-Scarred"
+   }
+  ],
+  "collections": [],
+  "crates": [
+   {
+    "id": "crate-4018",
+    "name": "Operation Breakout Weapon Case"
+   }
+  ]
+ },
+ {
+  "id": "skin-vanilla-weapon_knife_karambit",
+  "name": "★ Karambit",
+  "weapon": {
+   "id": "sfui_wpnhud_knifekaram",
+   "name": "Karambit"
+  },
+  "rarity": {
+   "id": "rarity_ancient_weapon",
+   "name": "Covert"
+  },
+  "crates": [
+   {
+    "id": "crate-4001",
+    "name": "CS:GO Weapon Case"
+   },
+   {
+    "id": "crate-4002",
+    "name": "eSports 2013 Case"
+   }
+  ]
+ },
+ {
+  "id": "skin-vanilla-weapon_bayonet",
+  "name": "★ Bayonet",
+  "weapon": {
+   "id": "sfui_wpnhud_knifebayonet",
+   "name": "Bayonet"
+  },
+  "rarity": {
+   "id": "rarity_ancient_weapon",
+   "name": "Covert"
+  },
+  "crates": [
+   {
+    "id": "crate-4001",
+    "name": "CS:GO Weapon Case"
+   },
+   {
+    "id": "crate-4002",
+    "name": "eSports 2013 Case"
+   }
+  ]
+ }
+]

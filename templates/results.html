@@ -223,6 +223,13 @@
         .recommendation-banner .rec-item {
             font-size: 1.1em;
         }
+        .recommendation-banner .rec-list {
+            margin: 4px 0 8px 0;
+            padding-left: 22px;
+        }
+        .slot-value {
+            margin: 0 0 10px 0;
+        }
         .recommendation-banner .rec-price {
             font-weight: bold;
             color: #1b7a34;
@@ -253,10 +260,21 @@
             font-weight: bold;
             color: #1b7a34;
         }
+        .not-tradable {
+            font-weight: bold;
+            color: #6c757d;
+        }
         .price-unknown {
             color: #6c757d;
             font-style: italic;
             font-size: 0.9em;
+        }
+        .logout-form {
+            display: inline;
+            margin: 0;
+        }
+        .logout-form .btn {
+            font-family: inherit;
         }
     </style>
 </head>
@@ -269,7 +287,10 @@
                     <span>Welcome, {{ user.username }}!</span>
                     <a href="{{ url_for('history') }}" class="btn btn-outline">History</a>
                     <a href="{{ url_for('profile') }}" class="btn btn-outline">Profile</a>
-                    <a href="{{ url_for('logout') }}" class="btn">Logout</a>
+                    <form method="post" action="{{ url_for('logout') }}" class="logout-form">
+                        {{ csrf_field() }}
+                        <button type="submit" class="btn">Logout</button>
+                    </form>
                 {% else %}
                     <div class="auth-buttons">
                         <a href="{{ url_for('login') }}" class="btn btn-outline">Login</a>
@@ -307,16 +328,27 @@
                 
                 {% if item_results %}
 
-                {% if recommendation and recommendation.best_match %}
+                {% if recommendations %}
                 <div class="recommendation-banner">
-                    <p class="rec-title">⭐ Recommended pick — highest market value</p>
-                    <p class="rec-item">
-                        <strong>{{ recommendation.best_match.name }}</strong>
-                        — <span class="rec-price">${{ "%.2f"|format(recommendation.best_price) }}</span>
-                    </p>
+                    <p class="rec-title">⭐ Recommended {{ 'picks' if recommendations|length > 1 else 'pick' }} — you can claim 2 of the 4 items</p>
+                    <ol class="rec-list">
+                    {% for rec in recommendations %}
+                        <li class="rec-item">
+                            <strong>{{ rec.display_name }}</strong>
+                            — <span class="rec-price">${{ "%.2f"|format(rec.value) }}</span>
+                            {% if rec.priced_variants > 1 %}
+                            <span class="score">(${{ "%.2f"|format(rec.price_min) }}–${{ "%.2f"|format(rec.price_max) }} across {{ rec.priced_variants }} {{ rec.variant_kind }})</span>
+                            {% endif %}
+                        </li>
+                    {% endfor %}
+                    </ol>
                     <p class="score">
-                        Based on the most recent Steam Market price stored for each candidate.
-                        It is pre-selected below; untick it if the match looks wrong.
+                        Ranked by the most recent Steam Market price stored for each item. The drop
+                        screen does not show a skin's wear (and the scan often misses a graffiti's
+                        colour), so those are valued at the <strong>{{ valuation_label }}</strong> among
+                        their wears or colours (<code>VALUATION_RULE={{ valuation_rule }}</code>).
+                        The matching entries are pre-selected below; change them once you know the wear,
+                        or untick one if the match looks wrong.
                     </p>
                 </div>
                 {% elif item_results %}
@@ -333,11 +365,28 @@
                 <p>Select up to 2 items to add to your journal:</p>
 
                 <form action="{{ url_for('add_to_journal') }}" method="post" id="addItemsForm">
+                    {{ csrf_field() }}
                     <input type="hidden" name="screenshot_id" value="{{ screenshot_id }}">
 
                     {% for result in item_results %}
                     <div class="item-box{% if result.recommended %} recommended{% endif %}">
-                        <h3>Detected: {{ result.original }}</h3>
+                        <h3>Detected: {{ result.original }}
+                            {% if result.pick_rank %}<span class="rec-badge">Pick {{ result.pick_rank }}</span>{% endif %}
+                        </h3>
+                        {% if result.not_tradable %}
+                        <p class="slot-value">Value: <span class="not-tradable">Not tradable — $0</span>
+                            <span class="score">(cannot be sold on the Steam Market; never recommended)</span></p>
+                        {% elif result.value is not none %}
+                        <p class="slot-value">
+                            Value: <span class="price-tag">${{ "%.2f"|format(result.value) }}</span>
+                            {% if result.priced_variants > 1 %}
+                            <span class="score">· range ${{ "%.2f"|format(result.price_min) }}–${{ "%.2f"|format(result.price_max) }} over {{ result.priced_variants }} priced {{ result.variant_kind }} ({{ valuation_label }} counts)</span>
+                            {% endif %}
+                        </p>
+                        {% endif %}
+                        {% if result.uncertain %}
+                        <p class="score">Uncertain match: check the name before relying on this value. Not ranked as a pick.</p>
+                        {% endif %}
                         {% if result.status == 'found' %}
                             {% if result.matches %}
                                 {% for match in result.matches %}
@@ -345,12 +394,14 @@
                                     <input type="checkbox" name="item_id" value="{{ match.id }}" id="item-{{ match.id }}" class="item-checkbox"{% if match.recommended %} checked{% endif %}>
                                     <label for="item-{{ match.id }}">
                                         <strong>{{ match.name }}</strong>
-                                        {% if match.price_value is not none %}
+                                        {% if match.tradable is sameas false %}
+                                        <span class="not-tradable">- Not tradable — $0</span>
+                                        {% elif match.price_value is not none %}
                                         <span class="price-tag">- ${{ "%.2f"|format(match.price_value) }}</span>
                                         {% else %}
                                         <span class="price-unknown">- no price data</span>
                                         {% endif %}
-                                        {% if match.recommended %}<span class="rec-badge">Best value</span>{% endif %}
+                                        {% if match.recommended %}<span class="rec-badge">Recommended</span>{% endif %}
                                         <div class="score">
                                             Confidence: {{ match.confidence }}
                                             {% if match.score > 0 %}
@@ -367,6 +418,8 @@
                             <p class="no-matches">No matching items found in database.</p>
                         {% elif result.status == 'empty' %}
                             <p class="no-matches">Empty or unrecognizable text detected.</p>
+                        {% elif result.status == 'name_missing' %}
+                            <p class="no-matches">Only the item type was read; the name was cut off, so this item cannot be identified or priced.</p>
                         {% endif %}
                     </div>
                     {% endfor %}
@@ -402,6 +455,7 @@
                         <p>${{ item.item_price }}</p>
                         {% endif %}
                         <form action="{{ url_for('remove_from_journal') }}" method="post">
+                            {{ csrf_field() }}
                             <input type="hidden" name="journal_id" value="{{ item.id }}">
                             <button type="submit" class="remove-btn" title="Remove from journal">×</button>
                         </form>

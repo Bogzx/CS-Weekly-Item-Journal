@@ -2,14 +2,19 @@ import os
 import uuid
 import time
 import re
+import hmac
+import ipaddress
+import secrets
 import sqlite3
+import threading
+from collections import deque
 from datetime import datetime, timedelta, timezone
 from functools import wraps
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for, flash, g
+from flask import Flask, render_template, request, session, redirect, url_for, flash, g
+from markupsafe import Markup
 from flask.sessions import SecureCookieSessionInterface
-from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
-from werkzeug.formparser import RequestEntityTooLarge
+from werkzeug.exceptions import RequestEntityTooLarge
 from Src.ImageDetector.modified_detect_text import WeeklyDropProcessor
 from Src.ImageDetector.item_matcher import ItemMatcher
 
@@ -21,6 +26,7 @@ import json
 import subprocess
 import sys
 import logging
+from urllib.parse import urlparse
 
 # Load variables from .env file
 load_dotenv()
@@ -28,6 +34,17 @@ load_dotenv()
 # Absolute path to the repository root, so that subprocesses and file lookups
 # do not depend on the process working directory.
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def repo_path(path):
+    """Resolve a relative path against the repository root, not the CWD.
+
+    The defaults (and the relative paths in .env.EXAMPLE) used to be resolved
+    against whatever directory `python app.py` was launched from, so starting
+    the app from anywhere but the repo root created an empty database and
+    failed to find the model.
+    """
+    return path if os.path.isabs(path) else os.path.join(BASE_DIR, path)
 
 
 def _env_bool(name, default):
@@ -40,15 +57,91 @@ def _env_bool(name, default):
 
 # Written to price_update_config.json on first run if it is missing. An empty
 # 'collections' list means "every collection".
+# 'drop_pool' limits the crawl to what the weekly drop offers (~9k market
+# items, ~2.5 h); without it the job walked the whole ~35k-item market by
+# name and stopped at max_items, which never reached most cases or graffiti.
 DEFAULT_PRICE_UPDATE_CONFIG = {
     "collections": [],
-    "max_items": 5000,
+    "drop_pool": True,
+    "max_items": 10000,
     "batch_size": 100,
 }
 
 
+# Skin wears, best first. The care-package screen does not show which one
+# you would get.
+WEAR_NAMES = ("Factory New", "Minimal Wear", "Field-Tested", "Well-Worn", "Battle-Scarred")
+
+# How a slot is valued when its exact item is unknown (a skin of unknown
+# wear). Only the top match's own wear variants are considered; the rule picks
+# which of their prices counts. Set with VALUATION_RULE in .env.
+#   lowest  - the cheapest wear: a floor on what the drop is worth (default)
+#   median  - the middle wear price
+#   highest - the priciest wear, usually Factory New (the old behaviour)
+VALUATION_RULES = {
+    'lowest': 'lowest price',
+    'median': 'median price',
+    'highest': 'highest price',
+}
+DEFAULT_VALUATION_RULE = 'lowest'
+
+# The weekly care package lets you claim this many of its four items.
+RECOMMENDED_PICKS = 2
+
+
+def resolve_valuation_rule(raw):
+    """Validate VALUATION_RULE, falling back to the conservative default."""
+    rule = (raw or DEFAULT_VALUATION_RULE).strip().lower()
+    if rule not in VALUATION_RULES:
+        logging.getLogger(__name__).warning(
+            "Unknown VALUATION_RULE %r; using %r. Valid values: %s",
+            raw, DEFAULT_VALUATION_RULE, ', '.join(VALUATION_RULES))
+        return DEFAULT_VALUATION_RULE
+    return rule
+
+
+# The placeholder shipped in .env.EXAMPLE. Anyone who copies that file without
+# editing it would otherwise sign sessions with a key published on GitHub,
+# which lets a visitor forge a cookie for any user_id.
+PLACEHOLDER_SECRET_PREFIX = 'CHANGE_ME'
+
+
+def resolve_secret_key(raw):
+    """Return a usable session signing key.
+
+    Falls back to a random per-process key (sessions end on restart) when the
+    configured one is missing or is still the .env.EXAMPLE placeholder.
+    """
+    if not raw or raw.startswith(PLACEHOLDER_SECRET_PREFIX):
+        logging.getLogger(__name__).warning(
+            "SECRET_KEY is unset or still the .env.EXAMPLE placeholder; using a "
+            "random key. Logins will not survive a restart. See README 'Configure'."
+        )
+        return os.urandom(24)
+    return raw
+
+
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24))
+app.secret_key = resolve_secret_key(os.environ.get('SECRET_KEY'))
+
+# Behind a reverse proxy every request arrives from the proxy's address, so
+# the login throttle would lock out everyone at once (or no one). Set
+# TRUSTED_PROXIES to the number of proxies in front of the app to take the
+# client address, scheme and host from their X-Forwarded-* headers. It stays
+# 0 by default: trusting those headers without a proxy lets any client spoof
+# its address and dodge the throttle.
+_raw_wsgi_app = app.wsgi_app
+
+
+def trust_proxies(count):
+    """Honour X-Forwarded-For/-Proto/-Host from `count` proxies (0 = none)."""
+    from werkzeug.middleware.proxy_fix import ProxyFix
+
+    app.wsgi_app = (ProxyFix(_raw_wsgi_app, x_for=count, x_proto=count, x_host=count)
+                    if count > 0 else _raw_wsgi_app)
+
+
+trust_proxies(int(os.environ.get('TRUSTED_PROXIES', '0')))
 
 # How long a "remember me" session lasts. Sessions without "remember me" get
 # REMEMBER_ME_OFF_LIFETIME instead (see login()).
@@ -56,12 +149,19 @@ REMEMBERED_SESSION_LIFETIME = timedelta(days=int(os.environ.get('SESSION_LIFETIM
 UNREMEMBERED_SESSION_LIFETIME = timedelta(hours=1)
 
 # Configure the session to use cookies
-app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['MAX_CONTENT_LENGTH'] = 256 * 1024 * 1024  # 256MB max upload (increased from 128MB)
-app.config['MAX_CONTENT_PATH'] = 16 * 1024 * 1024  # 16MB max for form fields
-app.config['DATABASE'] = os.environ.get('DATABASE_PATH', 'csgo_items.db')
-app.config['MODEL_PATH'] = os.environ.get('MODEL_PATH', os.path.join('Models', 'BOX_TRAINED.pt'))
+app.config['UPLOAD_FOLDER'] = repo_path(os.environ.get('UPLOAD_FOLDER', 'uploads'))
+# A 4K PNG screenshot is ~10 MB, and a pasted one arrives as base64 text in a
+# form field (+33%). This was 256 MB, which let any logged-in user make the
+# server buffer and decode a quarter-gigabyte request per upload.
+MAX_UPLOAD_MB = int(os.environ.get('MAX_UPLOAD_MB', '20'))
+app.config['MAX_CONTENT_LENGTH'] = MAX_UPLOAD_MB * 1024 * 1024
+# Werkzeug's per-field in-memory limit (default 500 KB) must fit a pasted
+# screenshot, so it follows the request limit.
+app.config['MAX_FORM_MEMORY_SIZE'] = app.config['MAX_CONTENT_LENGTH']
+app.config['DATABASE'] = repo_path(os.environ.get('DATABASE_PATH', 'csgo_items.db'))
+app.config['MODEL_PATH'] = repo_path(os.environ.get('MODEL_PATH', os.path.join('Models', 'BOX_TRAINED.pt')))
 app.config['SESSION_TYPE'] = 'filesystem'
+app.config['VALUATION_RULE'] = resolve_valuation_rule(os.environ.get('VALUATION_RULE'))
 app.config['SESSION_PERMANENT'] = True
 app.config['PERMANENT_SESSION_LIFETIME'] = REMEMBERED_SESSION_LIFETIME
 # Only send the session cookie over HTTPS. This MUST be false when serving
@@ -104,8 +204,51 @@ def enforce_session_expiry():
     if expires_at is not None and datetime.now(timezone.utc).timestamp() > expires_at:
         session.clear()
 
-# Increase request size limits for Werkzeug
-app.config['MAX_FORM_MEMORY_SIZE'] = 64 * 1024 * 1024  # 64MB for form data
+# --- CSRF protection -------------------------------------------------------
+#
+# Every POST must carry the per-session token that templates embed with
+# {{ csrf_field() }}. SameSite=Lax cookies already stop most cross-site form
+# posts in current browsers, but not from a sibling subdomain or an old
+# browser, and every state-changing route here (add/remove/clear journal,
+# upload, login) is a plain form POST. A small token check needs no extra
+# dependency; Flask-WTF's CSRFProtect is the drop-in alternative.
+CSRF_SESSION_KEY = '_csrf_token'
+CSRF_FIELD = 'csrf_token'
+app.config.setdefault('CSRF_ENABLED', _env_bool('CSRF_ENABLED', True))
+
+
+def get_csrf_token():
+    """This session's CSRF token, created on first use."""
+    token = session.get(CSRF_SESSION_KEY)
+    if not token:
+        token = secrets.token_urlsafe(32)
+        session[CSRF_SESSION_KEY] = token
+    return token
+
+
+def csrf_field():
+    """Hidden form input carrying the CSRF token (for templates)."""
+    return Markup(f'<input type="hidden" name="{CSRF_FIELD}" value="{get_csrf_token()}">')
+
+
+app.jinja_env.globals.update(csrf_token=get_csrf_token, csrf_field=csrf_field)
+
+
+@app.before_request
+def csrf_protect():
+    if request.method != 'POST' or not app.config.get('CSRF_ENABLED', True):
+        return None
+    expected = session.get(CSRF_SESSION_KEY)
+    sent = request.form.get(CSRF_FIELD) or request.headers.get('X-CSRF-Token')
+    # compare_digest raises TypeError on non-ASCII str, which turned a forged
+    # token such as 'é' into a 500; compare bytes instead.
+    if not expected or not sent or not hmac.compare_digest(str(sent).encode(), str(expected).encode()):
+        app.logger.warning("Rejected POST %s: missing or invalid CSRF token", request.path)
+        return ('The form was missing its security token or it has expired. '
+                'Go back, reload the page and try again.', 400,
+                {'Content-Type': 'text/plain; charset=utf-8'})
+    return None
+
 
 # Ensure the upload folder exists
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -165,6 +308,14 @@ def initialize_database():
         # Column already exists, which is fine
         pass
     
+    # tradable = 0 marks items that cannot be sold (Charm Detachment Pack)
+    try:
+        cursor.execute("ALTER TABLE items ADD COLUMN tradable INTEGER NOT NULL DEFAULT 1")
+        print("Added tradable column to items table")
+    except sqlite3.OperationalError:
+        # Column already exists (or no item table yet), which is fine
+        pass
+    
     # Create users table if it doesn't exist
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS users (
@@ -205,6 +356,125 @@ def initialize_database():
 # Initialize the database
 initialize_database()
 
+class LoginThrottle:
+    """Count failed logins per client and refuse further attempts for a while.
+
+    In-memory and per-process: enough to stop an online password guesser
+    against a single `python app.py` instance, and it needs no extra service.
+    Failures older than `window` seconds are forgotten. Behind a reverse proxy
+    every client shares the proxy's address, so run the app directly or set
+    TRUSTED_PROXIES first.
+
+    An attempt is counted *before* the password is checked (begin_attempt),
+    so parallel requests cannot all slip in under the limit while the slow
+    password hash runs. A successful login then clears only that username's
+    failures: clearing the whole client let anyone with an account of their
+    own guess max_failures - 1 passwords, log in as themselves, and repeat.
+    """
+
+    def __init__(self, max_failures, window, clock=time.monotonic):
+        self.max_failures = max_failures
+        self.window = window
+        self.clock = clock
+        self._failures = {}  # key -> deque of (timestamp, username)
+        self._lock = threading.Lock()
+
+    def _recent(self, key, now):
+        failures = self._failures.get(key)
+        if failures is None:
+            return None
+        while failures and failures[0][0] <= now - self.window:
+            failures.popleft()
+        if not failures:
+            del self._failures[key]
+            return None
+        return failures
+
+    def _retry_after(self, key, now):
+        failures = self._recent(key, now)
+        if failures is None or len(failures) < self.max_failures:
+            return 0
+        return max(1, int(failures[-self.max_failures][0] + self.window - now + 0.999))
+
+    def retry_after(self, key):
+        """Seconds until `key` may try again, or 0 if it is not locked out."""
+        if self.max_failures <= 0:
+            return 0
+        with self._lock:
+            return self._retry_after(key, self.clock())
+
+    def _append(self, key, now, username):
+        failures = self._recent(key, now)
+        if failures is None:
+            failures = self._failures[key] = deque()
+        failures.append((now, username))
+        # Only the newest max_failures entries matter.
+        while len(failures) > max(self.max_failures, 1):
+            failures.popleft()
+
+    def begin_attempt(self, key, username=None):
+        """Count an attempt as failed unless succeeded() is called for it.
+
+        Returns 0 if the attempt may go ahead, or the seconds to wait if the
+        client is locked out (then nothing is recorded). The check and the
+        count happen under one lock.
+        """
+        if self.max_failures <= 0:
+            return 0
+        with self._lock:
+            now = self.clock()
+            wait = self._retry_after(key, now)
+            if not wait:
+                self._append(key, now, username)
+            return wait
+
+    def succeeded(self, key, username=None):
+        """Forget `key`'s failures for `username`, and only for it."""
+        with self._lock:
+            failures = self._failures.get(key)
+            if failures is None:
+                return
+            kept = deque(f for f in failures if f[1] != username)
+            if kept:
+                self._failures[key] = kept
+            else:
+                del self._failures[key]
+
+    def record_failure(self, key, username=None):
+        with self._lock:
+            self._append(key, self.clock(), username)
+
+    def reset(self, key=None):
+        with self._lock:
+            if key is None:
+                self._failures.clear()
+            else:
+                self._failures.pop(key, None)
+
+
+def throttle_key(address):
+    """The login-throttle key for a client address.
+
+    An IPv6 client usually controls a whole /64, so one bucket per /64:
+    otherwise every guess could come from a fresh address.
+    """
+    try:
+        ip = ipaddress.ip_address(address)
+    except ValueError:
+        return address or 'unknown'
+    if ip.version == 6:
+        if ip.ipv4_mapped is not None:
+            return str(ip.ipv4_mapped)
+        return str(ipaddress.ip_network(f'{ip}/64', strict=False))
+    return str(ip)
+
+
+login_throttle = LoginThrottle(
+    max_failures=int(os.environ.get('LOGIN_MAX_ATTEMPTS', '5')),
+    window=int(os.environ.get('LOGIN_LOCKOUT_MINUTES', '15')) * 60,
+)
+
+
 # Authentication functions
 def login_required(f):
     """Decorator to require login for certain routes."""
@@ -215,6 +485,18 @@ def login_required(f):
             return redirect(url_for('login', next=request.url))
         return f(*args, **kwargs)
     return decorated_function
+
+def is_safe_redirect(target):
+    """True if `target` is a path on this site.
+
+    Checking startswith('/') alone let '//evil.example' and '/\\evil.example'
+    through; browsers treat both as a different host.
+    """
+    if not target or not target.startswith('/') or target.startswith(('//', '/\\')):
+        return False
+    parsed = urlparse(target)
+    return not parsed.scheme and not parsed.netloc
+
 
 def get_current_user():
     """Get current user from session."""
@@ -241,48 +523,111 @@ def get_journal_total(journal_items):
     return sum(float(item.get('item_price', 0) or 0) for item in journal_items)
 
 
-def get_journal_history(user_id):
-    """Aggregate a user's journal into a per-week drop history.
+def _parse_timestamp(value):
+    """Parse a SQLite CURRENT_TIMESTAMP string (or a datetime) into a datetime."""
+    if isinstance(value, datetime):
+        return value
+    try:
+        return datetime.fromisoformat(str(value).strip())
+    except ValueError:
+        return None
 
-    CS2 grants one care package per week, so the natural unit for "how am I
-    doing over time" is the ISO-ish week the item was journalled in. Returns
-    buckets oldest-first, each carrying the number of items kept, their total
-    value, the mean value per item that week (the realised expected value of a
-    drop) and the running cumulative total.
+
+# How the history page cuts time into weeks.
+#   cs2 - CS2's weekly care-package reset (default). Public trackers agree it
+#         is Wednesday 01:00 GMT (Tuesday 6 PM Pacific): gamerevolution.com,
+#         weeklyreset.net, skinsmetric.com, checked 2026-09-30. None says
+#         whether it moves with daylight saving; CS2_RESET_HOUR_UTC adjusts it.
+#   iso - ISO weeks, Monday 00:00 UTC.
+WEEK_BOUNDARIES = ('cs2', 'iso')
+CS2_RESET_WEEKDAY = 2  # Monday = 0, so Wednesday
+CS2_RESET_HOUR_UTC = int(os.environ.get('CS2_RESET_HOUR_UTC', '1'))
+
+
+def resolve_week_boundary(raw):
+    boundary = (raw or 'cs2').strip().lower()
+    if boundary not in WEEK_BOUNDARIES:
+        logging.getLogger(__name__).warning(
+            "Unknown WEEK_BOUNDARY %r; using 'cs2'. Valid values: %s", raw, ', '.join(WEEK_BOUNDARIES))
+        return 'cs2'
+    return boundary
+
+
+app.config['WEEK_BOUNDARY'] = resolve_week_boundary(os.environ.get('WEEK_BOUNDARY'))
+
+
+def bucket_by_week(rows, boundary=None):
+    """Aggregate (created_at, item_price) rows into weekly buckets.
+
+    Timestamps are UTC (SQLite CURRENT_TIMESTAMP). With boundary 'iso' a week
+    runs Monday 00:00 to Sunday 23:59 and is labelled with its ISO week; with
+    'cs2' it runs from one care-package reset to the next and is labelled
+    with the ISO week of the Wednesday it starts on, with `week_start` being
+    that reset.
+
+    Weeks used to come from SQLite's strftime('%Y-W%W'), which is not an ISO
+    week: it counts from the year's first Monday, so the days before it fall
+    into a "W00" and one week straddling New Year was split into two buckets.
+
+    Returns buckets oldest-first, each with the week label, its start, the
+    number of items, their total value, the mean over priced items (the
+    realised expected value of a drop) and the running cumulative total.
     """
-    conn = get_db()
-    rows = conn.execute(
-        """
-        SELECT
-            strftime('%Y-W%W', created_at) AS week,
-            MIN(date(created_at))          AS week_start,
-            COUNT(*)                       AS item_count,
-            COALESCE(SUM(item_price), 0)   AS total_value,
-            AVG(item_price)                AS avg_value
-        FROM user_journals
-        WHERE user_id = ?
-        GROUP BY week
-        ORDER BY week ASC
-        """,
-        (user_id,)
-    ).fetchall()
+    boundary = boundary or app.config.get('WEEK_BOUNDARY', 'cs2')
+    # Shift time so the chosen week start lands on Monday 00:00; ISO weeks of
+    # the shifted time are then the wanted weeks.
+    shift = (timedelta(days=CS2_RESET_WEEKDAY, hours=CS2_RESET_HOUR_UTC)
+             if boundary == 'cs2' else timedelta(0))
+
+    weeks = {}
+    for created_at, price in rows:
+        stamp = _parse_timestamp(created_at)
+        if stamp is None:
+            continue
+        iso_year, iso_week, _ = (stamp - shift).isocalendar()
+        bucket = weeks.setdefault((iso_year, iso_week), {'count': 0, 'prices': []})
+        bucket['count'] += 1
+        if price is not None:
+            bucket['prices'].append(float(price))
 
     history = []
     running_total = 0.0
-    for row in rows:
-        total = float(row.get('total_value') or 0)
+    for (iso_year, iso_week) in sorted(weeks):
+        bucket = weeks[(iso_year, iso_week)]
+        total = sum(bucket['prices'])
         running_total += total
+        start = datetime.fromisocalendar(iso_year, iso_week, 1) + shift
         history.append({
-            'week': row.get('week'),
-            'week_start': row.get('week_start'),
-            'item_count': int(row.get('item_count') or 0),
-            # AVG() skips NULLs, so this is the mean over *priced* items only,
-            # which is what you want for an EV figure.
-            'avg_value': float(row.get('avg_value') or 0),
+            'week': f'{iso_year}-W{iso_week:02d}',
+            'week_start': start.strftime('%Y-%m-%d %H:%M UTC') if shift else start.date().isoformat(),
+            'item_count': bucket['count'],
+            # Mean over *priced* items only, which is what you want for an EV
+            # figure (unpriced items would drag it towards zero).
+            'avg_value': total / len(bucket['prices']) if bucket['prices'] else 0.0,
             'total_value': total,
             'cumulative_value': running_total,
         })
     return history
+
+
+def bucket_by_iso_week(rows):
+    """bucket_by_week with ISO (Monday) weeks."""
+    return bucket_by_week(rows, boundary='iso')
+
+
+def get_journal_history(user_id):
+    """Aggregate a user's journal into a per-week drop history.
+
+    CS2 grants one care package per week, so the natural unit for "how am I
+    doing over time" is the drop week the item was journalled in (see
+    WEEK_BOUNDARY). See bucket_by_week for the bucket fields.
+    """
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT created_at, item_price FROM user_journals WHERE user_id = ?",
+        (user_id,)
+    ).fetchall()
+    return bucket_by_week((row['created_at'], row['item_price']) for row in rows)
 
 
 def summarize_history(history):
@@ -384,6 +729,139 @@ def process_image(image_path):
     """
     return get_processor().process_image(image_path, save_crops=False)
 
+# MIME subtype of a pasted data: URL -> file extension we save it under.
+PASTED_IMAGE_EXTENSIONS = {
+    'png': 'png',
+    'jpeg': 'jpg',
+    'jpg': 'jpg',
+    'webp': 'webp',
+    'bmp': 'bmp',
+    # OpenCV cannot read GIF, so a pasted GIF is re-encoded as PNG.
+    'gif': 'png',
+}
+
+# Formats cv2.imread can read, as Pillow names them -> extension to save under.
+CV2_READABLE_FORMATS = {'PNG': 'png', 'JPEG': 'jpg', 'WEBP': 'webp', 'BMP': 'bmp'}
+
+# The only formats Pillow may even try to open. Without this list Image.open
+# probes every plugin it has, and loading an EPS/PS file runs Ghostscript on
+# the uploaded PostScript when it is installed (it is on most Linux hosts).
+ALLOWED_IMAGE_FORMATS = ('PNG', 'JPEG', 'WEBP', 'BMP', 'GIF')
+
+# Largest image accepted, in pixels. An 8K screenshot is ~33 MP. Pillow only
+# refuses images over ~179 MP, so a 20 MB upload could otherwise be a 13000 x
+# 13000 PNG that decodes to hundreds of MB in Pillow and again in OpenCV.
+MAX_IMAGE_PIXELS = 40_000_000
+
+
+def decode_pasted_image(image_data):
+    """Split a pasted image into (extension, bytes).
+
+    Accepts a `data:image/<type>;base64,...` URL or bare base64 (assumed PNG).
+    The subtype used to be copied straight from the request into the saved
+    file name, so a crafted header such as `data:image/..\\..\\app.py;base64,`
+    chose the path and extension of the written file on Windows, and bytes PIL
+    could not parse were then written there verbatim. Now the type must be a
+    known image format and the payload must actually decode as an image.
+
+    Raises ValueError for anything else.
+    """
+    import base64
+    import binascii
+
+    if not image_data:
+        raise ValueError('no image data received')
+
+    extension = 'png'
+    if image_data.startswith('data:'):
+        header, sep, image_data = image_data.partition(',')
+        match = re.fullmatch(r'data:image/([a-z0-9.+-]+)(;base64)?', header.strip().lower())
+        if not sep or not match or not match.group(2):
+            raise ValueError('expected a base64 data:image URL')
+        subtype = match.group(1)
+        if subtype not in PASTED_IMAGE_EXTENSIONS:
+            raise ValueError(f'unsupported image type {subtype!r}')
+        extension = PASTED_IMAGE_EXTENSIONS[subtype]
+
+    try:
+        binary_data = base64.b64decode(image_data, validate=True)
+    except (binascii.Error, ValueError):
+        raise ValueError('image data is not valid base64')
+
+    image_format(binary_data)
+    return extension, binary_data
+
+
+def image_format(binary_data):
+    """Pillow's format name (e.g. 'PNG') for bytes that decode as an image.
+
+    Only ALLOWED_IMAGE_FORMATS are considered. Raises ValueError for anything
+    else, including decompression bombs and images over MAX_IMAGE_PIXELS.
+    """
+    from io import BytesIO
+    from PIL import Image, UnidentifiedImageError
+
+    try:
+        with Image.open(BytesIO(binary_data), formats=ALLOWED_IMAGE_FORMATS) as img:
+            fmt = img.format
+            pixels = img.width * img.height
+            img.verify()
+    except (UnidentifiedImageError, OSError, SyntaxError, Image.DecompressionBombError) as e:
+        raise ValueError(f'not a readable image ({e.__class__.__name__})')
+    if pixels > MAX_IMAGE_PIXELS:
+        raise ValueError(f'image is too large ({pixels / 1e6:.0f} megapixels, '
+                         f'limit {MAX_IMAGE_PIXELS / 1e6:.0f})')
+    return fmt
+
+
+def save_uploaded_image(binary_data, path_stem):
+    """Validate an uploaded file and write it as `<path_stem>.<ext>`.
+
+    Uploaded files used to be saved under the client's own file name and
+    extension without any check, so anything at all could be written into
+    UPLOAD_FOLDER and was then handed to OpenCV. Now the bytes must decode as
+    an image; formats OpenCV reads are stored unchanged (no re-encode, so OCR
+    sees the original pixels) and anything else is converted to PNG.
+
+    Returns the path written. Raises ValueError if it is not an image.
+    """
+    from io import BytesIO
+    from PIL import Image
+
+    extension = CV2_READABLE_FORMATS.get(image_format(binary_data))
+    if extension:
+        filepath = f'{path_stem}.{extension}'
+        with open(filepath, 'wb') as f:
+            f.write(binary_data)
+        return filepath
+
+    filepath = f'{path_stem}.png'
+    with Image.open(BytesIO(binary_data), formats=ALLOWED_IMAGE_FORMATS) as img:
+        if img.mode not in ('RGB', 'RGBA', 'L'):
+            img = img.convert('RGBA')
+        img.save(filepath)
+    return filepath
+
+
+def save_pasted_image(binary_data, filepath, max_dimension=2048):
+    """Write a decoded pasted image, downscaling very large ones."""
+    from io import BytesIO
+    from PIL import Image
+
+    img = Image.open(BytesIO(binary_data), formats=ALLOWED_IMAGE_FORMATS)
+    if img.width > max_dimension or img.height > max_dimension:
+        # Preserve aspect ratio; thumbnail() never upscales.
+        img.thumbnail((max_dimension, max_dimension), Image.LANCZOS)
+        print(f"Resized image to {img.width}x{img.height}")
+    if filepath.endswith('.jpg'):
+        if img.mode not in ('RGB', 'L'):
+            img = img.convert('RGB')
+    elif img.mode not in ('RGB', 'RGBA', 'L', 'P'):
+        # e.g. a CMYK JPEG pasted with a data:image/png header
+        img = img.convert('RGBA')
+    img.save(filepath, optimize=True, quality=85)
+
+
 def clean_item_name(name):
     """Clean up the detected item name for better database matching."""
     # Remove OCR artifacts, normalize spacing, etc.
@@ -406,7 +884,7 @@ def ensure_dict(obj):
     if hasattr(obj, 'keys') and callable(obj.keys):
         try:
             return dict(obj)
-        except:
+        except (TypeError, ValueError):
             pass
     
     # Handle objects with __dict__ attribute
@@ -421,17 +899,59 @@ def ensure_dict(obj):
     if hasattr(obj, '__iter__') and not isinstance(obj, (str, bytes)):
         try:
             return {i: v for i, v in enumerate(obj)}
-        except:
+        except TypeError:
             pass
     
     # If all else fails, just wrap it in a dictionary
     return {'value': obj}
 
+def closest_graffiti_colour(ocr_colour, variations):
+    """The graffiti variation whose '(Colour)' best matches the OCR'd colour.
+
+    Returns None when nothing is reasonably close (an OCR fragment rather
+    than a colour), so the caller keeps the matcher's own pick.
+    """
+    from difflib import SequenceMatcher
+
+    wanted = ocr_colour.strip().lower()
+    best, best_ratio = None, 0.0
+    for variation in variations or []:
+        variation = ensure_dict(variation)
+        found = re.search(r'\(([^()]*)\)$', variation.get('name') or '')
+        if not found:
+            continue
+        ratio = SequenceMatcher(None, wanted, found.group(1).lower()).ratio()
+        if ratio > best_ratio:
+            best, best_ratio = variation, ratio
+    return best if best_ratio >= 0.6 else None
+
+
+def candidate_entry(item, score, confidence):
+    """One candidate for the results page, from an item row."""
+    tradable = item.get('tradable')
+    return {
+        'id': item.get('id'),
+        'name': item.get('name', 'Unknown Item'),
+        'collection': item.get('collection', ''),
+        'price': item.get('price'),
+        'price_type': item.get('price_type', 'unknown'),
+        'item_type': item.get('item_type', ''),
+        # Databases built before the column existed count as tradable.
+        'tradable': tradable is None or bool(tradable),
+        'score': score,
+        'confidence': confidence,
+    }
+
+
+# Normalised OCR texts that name only an item type, not an item.
+TYPE_ONLY_TEXTS = {'sealed graffiti', 'graffiti', 'sealed', ''}
+
+
 def match_items_in_database(item_names):
     """Match detected item names to the database using the ItemMatcher."""
     results = []
     
-    for i, name in enumerate(item_names):
+    for name in item_names:
         cleaned_name = clean_item_name(name)
         if not cleaned_name:
             results.append({
@@ -441,118 +961,78 @@ def match_items_in_database(item_names):
                 'matches': []
             })
             continue
+
+        # Text that is only an item-type prefix ("Sealed Graffiti" with the
+        # name cut off by the crop) scores 1.0 against *every* graffiti, so
+        # the "match" was an arbitrary one at an arbitrary price -- and could
+        # even become a recommended pick. Say what happened instead.
+        if matcher.normalize_text(cleaned_name) in TYPE_ONLY_TEXTS:
+            results.append({
+                'original': name,
+                'cleaned': cleaned_name,
+                'status': 'name_missing',
+                'matches': []
+            })
+            continue
         
-        # Use the ItemMatcher to match the item with confidence
-        match_result = matcher.match_with_confidence(cleaned_name, threshold=0.4)
+        # Use the ItemMatcher to match the item with confidence. The item
+        # type is read from the text itself; this used to assume the first of
+        # the four slots is always a case and searched only cases there.
+        item_type = matcher.detect_item_type(cleaned_name)
+        match_result = matcher.match_with_confidence(cleaned_name, item_type=item_type)
         
         if match_result['status'] == 'matched':
-            # Convert the matches to the expected format
-            match_list = []
-            
-            # First get the best match
             best_match = ensure_dict(match_result['best_match'])
-            best_match_entry = {
-                'id': best_match.get('id'),
-                'name': best_match.get('name', 'Unknown Item'),
-                'collection': best_match.get('collection', ''),
-                'price': best_match.get('price'),
-                'price_type': best_match.get('price_type', 'unknown'),
-                'item_type': best_match.get('item_type', ''),
-                'score': match_result['score'],
-                'confidence': match_result['confidence']
-            }
+            best_match_entry = candidate_entry(best_match, match_result['score'],
+                                               match_result['confidence'])
+            best_type = best_match.get('item_type')
             
-            # First item (index 0) should only show case type items
-            if i == 0:
-                # Filter to only include case type items
-                case_matches = []
-                
-                # Add the best match if it's a case
-                if best_match.get('item_type') == 'case':
-                    case_matches.append(best_match_entry)
-                
-                # Look for case items in other matches, but avoid duplicates
-                seen_ids = {best_match.get('id')} if best_match.get('id') else set()
-                
-                for match_data in match_result['matches']:
-                    match_item = ensure_dict(match_data.get('item', {}))
-                    item_id = match_item.get('id')
-                    
-                    # Skip if we've already added this item or if it's not a case
-                    if item_id in seen_ids or match_item.get('item_type') != 'case':
-                        continue
-                        
-                    seen_ids.add(item_id)
-                    score = match_data.get('score', 0)
-                    
-                    # Determine confidence level based on score
-                    confidence = 'low'
-                    if score > 0.85:
-                        confidence = 'high'
-                    elif score > 0.65:
-                        confidence = 'medium'
-                    
-                    case_matches.append({
-                        'id': item_id,
-                        'name': match_item.get('name', 'Unknown Item'),
-                        'collection': match_item.get('collection', ''),
-                        'price': match_item.get('price'),
-                        'price_type': match_item.get('price_type', 'unknown'),
-                        'item_type': match_item.get('item_type', ''),
-                        'score': score,
-                        'confidence': confidence
-                    })
-                
-                # Use case matches instead of all matches
-                match_list = case_matches
-            
-            # For graffiti items, only show the best match
-            elif best_match.get('item_type') == 'graffiti':
+            # Cases (and capsules) and non-tradable tools: the best match plus
+            # the other candidates of the same type
+            if best_type in ('case', 'tool'):
                 match_list = [best_match_entry]
+                for match_data in match_result['matches'][1:]:
+                    match_item = ensure_dict(match_data.get('item', {}))
+                    if match_item.get('item_type') != best_type:
+                        continue
+                    score = match_data.get('score', 0)
+                    match_list.append(candidate_entry(match_item, score, matcher.confidence_label(score)))
             
-            # For all other items, process normally
+            # For graffiti items, only show the best match -- unless the OCR
+            # text lost the colour in brackets (the crop usually cuts it off),
+            # in which case the best match is an arbitrary colour and every
+            # colour is listed, like the wears of a skin.
+            elif best_type == 'graffiti':
+                colour = re.search(r'\(([^)]*)\)\s*$', cleaned_name)
+                if colour:
+                    # Every colour normalises to the same name, so the
+                    # matcher's top hit is an arbitrary one; use the colour
+                    # that was actually read.
+                    chosen = closest_graffiti_colour(colour.group(1), match_result['all_wear_variations'])
+                    if chosen is not None:
+                        best_match_entry = candidate_entry(chosen, best_match_entry['score'],
+                                                           best_match_entry['confidence'])
+                match_list = [best_match_entry]
+                if not colour:
+                    for variation in match_result['all_wear_variations']:
+                        variation = ensure_dict(variation)
+                        if variation.get('id') == best_match.get('id'):
+                            continue
+                        match_list.append(candidate_entry(variation, 0.0, 'variation'))
+            
+            # Skins: the best match, the other candidates, then every wear of
+            # the best match
             else:
-                # Add the best match
-                match_list.append(best_match_entry)
-                
-                # Add other matches if available
-                for match_data in match_result['matches'][1:]:  # Skip the first one as it's already added
+                match_list = [best_match_entry]
+                for match_data in match_result['matches'][1:]:
                     match_item = ensure_dict(match_data.get('item', {}))
                     score = match_data.get('score', 0)
-                    
-                    # Determine confidence level based on score
-                    confidence = 'low'
-                    if score > 0.85:
-                        confidence = 'high'
-                    elif score > 0.65:
-                        confidence = 'medium'
-                    
-                    match_list.append({
-                        'id': match_item.get('id'),
-                        'name': match_item.get('name', 'Unknown Item'),
-                        'collection': match_item.get('collection', ''),
-                        'price': match_item.get('price'),
-                        'price_type': match_item.get('price_type', 'unknown'),
-                        'item_type': match_item.get('item_type', ''),
-                        'score': score,
-                        'confidence': confidence
-                    })
+                    match_list.append(candidate_entry(match_item, score, matcher.confidence_label(score)))
                 
-                # Add wear variations if they're not already in the matches
                 for variation in match_result['all_wear_variations']:
                     variation = ensure_dict(variation)
-                    # Check if this variation is already in the match list
                     if not any(match['id'] == variation.get('id') for match in match_list):
-                        match_list.append({
-                            'id': variation.get('id'),
-                            'name': variation.get('name', 'Unknown Item'),
-                            'collection': variation.get('collection', ''),
-                            'price': variation.get('price'),
-                            'price_type': variation.get('price_type', 'unknown'),
-                            'item_type': variation.get('item_type', ''),
-                            'score': 0.0,  # No direct match score
-                            'confidence': 'variation'  # Mark as a variation
-                        })
+                        match_list.append(candidate_entry(variation, 0.0, 'variation'))
             
             results.append({
                 'original': name,
@@ -591,51 +1071,122 @@ def _as_price(value):
     return price
 
 
-def annotate_recommendation(item_results):
-    """Tag the highest-value drop so the UI can recommend it.
+GRAFFITI_PREFIX = 'Sealed Graffiti | '
 
-    README.md:5 and :12 advertise that the app "automatically recommends the
-    highest-value item", and the usage steps at README.md:126 tell the user the
-    recommendation will be highlighted -- but no code ever implemented it. The
-    results page was a flat checkbox list ordered by OCR match score
-    (item_matcher.py:327 sorts on 'score'), which has nothing to do with price.
 
-    For each of the four detected slots we pick the priciest candidate match,
-    then mark the single most valuable slot overall. Both the slot and the
-    winning match get flagged so the template can highlight the exact checkbox
-    rather than just the box it lives in.
+def base_item_name(name):
+    """The item without the variant the drop screen does not reliably show.
 
-    Returns the recommended slot dict, or None when nothing anywhere has a
-    known price (an unpriced database is the common first-run state).
+    'AK-47 | Redline (Field-Tested)' -> 'AK-47 | Redline' (the screen never
+    shows wear) and 'Sealed Graffiti | Sorry (Tiger Orange)' ->
+    'Sealed Graffiti | Sorry' (the OCR crop usually cuts the colour off).
+    Anything else is returned unchanged.
     """
-    best_slot = None
+    name = name or ''
+    for wear in WEAR_NAMES:
+        suffix = f' ({wear})'
+        if name.endswith(suffix):
+            return name[:-len(suffix)]
+    if name.startswith(GRAFFITI_PREFIX):
+        return re.sub(r'\s*\([^()]*\)$', '', name)
+    return name
+
+
+def _pick_by_rule(priced, rule):
+    """The candidate a slot is valued at, from a price-sorted list."""
+    if rule == 'highest':
+        return priced[-1]
+    if rule == 'median':
+        # Lower median, so the value is always a real candidate's price
+        # (statistics.median_low semantics) and it can be pre-selected.
+        return priced[(len(priced) - 1) // 2]
+    return priced[0]
+
+
+def annotate_recommendation(item_results, rule=None, picks=RECOMMENDED_PICKS):
+    """Value each detected slot and flag the most valuable ones to claim.
+
+    The care-package screen names the item but not a skin's wear, so a skin
+    slot matches several items at very different prices. It used to be valued
+    at the priciest candidate in its list -- usually Factory New, and
+    sometimes a *different item* that merely fuzzy-matched the OCR text -- so
+    skins were systematically overvalued against cases and graffiti.
+
+    Now a slot is valued only over its **top match's own variants** (same
+    item once the wear -- or a graffiti's colour, when OCR lost it -- is
+    stripped; see base_item_name). `rule` decides which of those
+    prices counts; see VALUATION_RULES. The full min-max range is kept for
+    the template.
+
+    The game lets you claim up to `picks` (2) of the four items, so the
+    `picks` highest-valued slots are recommended, each with the candidate the
+    value came from pre-selected.
+
+    Sets on every slot: `value`, `value_match`, `price_min`, `price_max`,
+    `priced_variants`, `variant_count`, `variant_kind` and `display_name`;
+    on every match:
+    `price_value`. Recommended slots and their `value_match` also get
+    `recommended = True`, and slots get `pick_rank` (1-based). A slot whose
+    top match has 'low' confidence is valued but marked `uncertain`, and one
+    whose top match cannot be traded is valued at $0 and marked
+    `not_tradable`; neither is ever recommended.
+
+    Returns the recommended slots, best first ([] when nothing has a price --
+    the common state of a freshly built database).
+    """
+    rule = rule or app.config.get('VALUATION_RULE', DEFAULT_VALUATION_RULE)
+    valued = []
 
     for result in item_results:
-        best_match = None
-
-        for match in result.get('matches') or []:
-            price = _as_price(match.get('price'))
+        matches = result.get('matches') or []
+        for match in matches:
             # Keep the parsed value so the template can format it without
             # re-parsing, and so unpriced rows stay visually distinct.
-            match['price_value'] = price
-            if price is None:
-                continue
-            if best_match is None or price > best_match['price_value']:
-                best_match = match
+            match['price_value'] = _as_price(match.get('price'))
 
-        result['best_match'] = best_match
-        result['best_price'] = best_match['price_value'] if best_match else None
+        result.update(value=None, value_match=None, price_min=None, price_max=None,
+                      priced_variants=0, variant_count=0, display_name=None,
+                      variant_kind='wears')
+        if not matches:
+            continue
 
-        if best_match is not None and (
-            best_slot is None or best_match['price_value'] > best_slot['best_price']
-        ):
-            best_slot = result
+        family_name = base_item_name(matches[0].get('name'))
+        family = [m for m in matches if base_item_name(m.get('name')) == family_name]
+        priced = sorted((m for m in family if m['price_value'] is not None),
+                        key=lambda m: m['price_value'])
 
-    if best_slot is not None:
-        best_slot['recommended'] = True
-        best_slot['best_match']['recommended'] = True
+        result['display_name'] = family_name
+        if family_name.startswith(GRAFFITI_PREFIX):
+            result['variant_kind'] = 'colours'
+        result['variant_count'] = len(family)
+        result['priced_variants'] = len(priced)
+        if not priced:
+            continue
 
-    return best_slot
+        chosen = _pick_by_rule(priced, rule)
+        result['value_match'] = chosen
+        result['value'] = chosen['price_value']
+        result['price_min'] = priced[0]['price_value']
+        result['price_max'] = priced[-1]['price_value']
+        # Non-tradable drops (Charm Detachment Pack) are worth $0 on the
+        # market and are never recommended over anything.
+        if not matches[0].get('tradable', True):
+            result['not_tradable'] = True
+            continue
+        # A low-confidence top match was the right item only half the time on
+        # the labelled screenshots, so it is valued but never recommended.
+        if matches[0].get('confidence') == 'low':
+            result['uncertain'] = True
+            continue
+        valued.append(result)
+
+    # sorted() is stable, so equal values keep their on-screen order.
+    ranked = sorted(valued, key=lambda r: r['value'], reverse=True)[:picks]
+    for rank, result in enumerate(ranked, start=1):
+        result['recommended'] = True
+        result['pick_rank'] = rank
+        result['value_match']['recommended'] = True
+    return ranked
 
 
 # Routes
@@ -709,6 +1260,14 @@ def register():
     
     return render_template('register.html')
 
+def locked_out(wait):
+    """The login page with a 429 for a client the throttle has locked out."""
+    minutes = (wait + 59) // 60
+    flash(f'Too many failed login attempts. Try again in {minutes} minute'
+          f'{"s" if minutes != 1 else ""}.', 'error')
+    return render_template('login.html'), 429
+
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     """User login page."""
@@ -717,6 +1276,11 @@ def login():
         password = request.form.get('password', '')
         remember = 'remember' in request.form
         
+        client_key = throttle_key(request.remote_addr)
+        wait = login_throttle.retry_after(client_key)
+        if wait:
+            return locked_out(wait)
+
         error = None
         if not username:
             error = 'Username is required.'
@@ -724,18 +1288,23 @@ def login():
             error = 'Password is required.'
             
         if error is None:
+            # Counted before the (slow) password check; see LoginThrottle.
+            wait = login_throttle.begin_attempt(client_key, username)
+            if wait:
+                return locked_out(wait)
             conn = get_db()
             user = conn.execute(
                 'SELECT id, username, password_hash FROM users WHERE username = ?',
                 (username,)
             ).fetchone()
             
-            if user is None:
-                error = 'Invalid username.'
-            elif not check_password_hash(user['password_hash'], password):
-                error = 'Invalid password.'
+            # One message for both cases so the form cannot be used to find
+            # out which usernames are registered.
+            if user is None or not check_password_hash(user['password_hash'], password):
+                error = 'Invalid username or password.'
             else:
                 # Login successful
+                login_throttle.succeeded(client_key, username)
                 session.clear()
                 session['user_id'] = user['id']
                 
@@ -761,7 +1330,7 @@ def login():
                 
                 # Redirect to next page if specified, otherwise to index
                 next_page = request.args.get('next')
-                if next_page and next_page.startswith('/'):  # Ensure it's a relative URL
+                if is_safe_redirect(next_page):
                     return redirect(next_page)
                 return redirect(url_for('index'))
         
@@ -770,9 +1339,13 @@ def login():
     
     return render_template('login.html')
 
-@app.route('/logout')
+@app.route('/logout', methods=['POST'])
 def logout():
-    """Log out the current user."""
+    """Log out the current user.
+
+    POST with the CSRF token only. As a GET link, any page could log a user
+    out with an <img src=".../logout">.
+    """
     session.clear()
     flash('You have been logged out.', 'info')
     return redirect(url_for('index'))
@@ -810,8 +1383,28 @@ def history():
         user=user,
         history=list(reversed(buckets)),  # table reads newest-first
         summary=summarize_history(buckets),
-        chart=build_history_chart(buckets)
+        chart=build_history_chart(buckets),
+        week_note=(f"Weeks start at the CS2 weekly reset, Wednesday {CS2_RESET_HOUR_UTC:02d}:00 UTC."
+                   if app.config['WEEK_BOUNDARY'] == 'cs2' else "ISO weeks, starting Monday 00:00 UTC.")
     )
+
+
+def upload_error_page(user, message):
+    """Render a rejected upload as the results page with a 400.
+
+    These used to be bare JSON bodies, which a browser submitting the upload
+    form showed as raw text.
+    """
+    journal = get_user_journal(user['id']) if user else []
+    return render_template(
+        'results.html',
+        error=message,
+        screenshot_id='',
+        item_results=[],
+        user=user,
+        journal=journal,
+        total_value=get_journal_total(journal)
+    ), 400
 
 
 @app.route('/upload', methods=['POST'])
@@ -819,11 +1412,9 @@ def history():
 def upload_file():
     """Handle file upload or pasted image."""
     try:
-        # Handle RequestEntityTooLarge exception
-        # This will catch the 413 error before it becomes an HTTP response
-        if request.content_length and request.content_length > app.config['MAX_CONTENT_LENGTH']:
-            raise RequestEntityTooLarge("The uploaded file is too large. Maximum size is 256MB.")
-            
+        # Oversized requests never get here: Flask enforces MAX_CONTENT_LENGTH
+        # while parsing the form and the 413 handler below takes over.
+
         # Check if cleanup is needed
         cleanup_uploads()
         
@@ -834,90 +1425,44 @@ def upload_file():
         
         # Generate a unique screenshot ID for this upload
         screenshot_id = str(uuid.uuid4())
-        
-        # Debug information
-        print(f"Form data keys: {list(request.form.keys())}")
-        print(f"Files: {list(request.files.keys())}")
+        path_stem = os.path.join(app.config['UPLOAD_FOLDER'], screenshot_id)
         
         # Handle file upload
         if 'file' in request.files and request.files['file'].filename:
-            file = request.files['file']
-            if file.filename == '':
-                return jsonify({'error': 'No file selected'}), 400
-                
-            # Generate a unique filename
-            filename = secure_filename(f"{screenshot_id}_{file.filename}")
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            file.save(filepath)
+            try:
+                filepath = save_uploaded_image(request.files['file'].read(), path_stem)
+            except ValueError as upload_error:
+                print(f"Rejected uploaded file: {upload_error}")
+                return upload_error_page(user, f'That file is not a screenshot we can read: {upload_error}.')
             print(f"Saved uploaded file to {filepath}")
         
         # Handle pasted image
         elif 'image_data' in request.form and request.form['image_data']:
             try:
-                import base64
-                from io import BytesIO
-                from PIL import Image
-                
-                image_data = request.form['image_data']
-                print(f"Received image data of length: {len(image_data)}")
-                
-                if not image_data:
-                    return jsonify({'error': 'No image data received'}), 400
-                    
-                # Strip the Data URL header if it exists
-                if 'data:image' in image_data:
-                    # Get the image format from the header
-                    image_format = image_data.split(';')[0].split('/')[1]
-                    image_data = image_data.split(',')[1]
-                else:
-                    image_format = 'png'  # Default format
-                
-                # Generate a unique filename for the pasted image
-                filename = f"{screenshot_id}.{image_format}"
-                filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-                
-                # First try to decode and optimize the image before saving
-                try:
-                    # Decode base64 to binary data
-                    binary_data = base64.b64decode(image_data)
-                    
-                    # Open image with PIL
-                    img = Image.open(BytesIO(binary_data))
-                    
-                    # Resize if the image is very large
-                    max_dimension = 2048  # Set a reasonable max dimension
-                    if img.width > max_dimension or img.height > max_dimension:
-                        # Calculate new dimensions while preserving aspect ratio
-                        if img.width > img.height:
-                            new_width = max_dimension
-                            new_height = int(img.height * (max_dimension / img.width))
-                        else:
-                            new_height = max_dimension
-                            new_width = int(img.width * (max_dimension / img.height))
-                            
-                        img = img.resize((new_width, new_height), Image.LANCZOS)
-                        print(f"Resized image to {new_width}x{new_height}")
-                    
-                    # Save the optimized image
-                    img.save(filepath, optimize=True, quality=85)
-                    print(f"Saved optimized pasted image to {filepath}")
-                    
-                except Exception as img_error:
-                    print(f"Error optimizing image: {img_error}, falling back to direct save")
-                    # Fall back to direct save if optimization fails
-                    with open(filepath, 'wb') as f:
-                        f.write(binary_data)
-                    print(f"Saved pasted image to {filepath}")
-            
-            except Exception as paste_error:
-                print(f"Error processing pasted image: {paste_error}")
-                return jsonify({'error': f'Error processing pasted image: {str(paste_error)}'}), 400
+                extension, binary_data = decode_pasted_image(request.form['image_data'])
+            except ValueError as paste_error:
+                print(f"Rejected pasted image: {paste_error}")
+                return upload_error_page(user, f'Error processing pasted image: {paste_error}.')
+
+            # The extension comes from PASTED_IMAGE_EXTENSIONS, never from the
+            # request, so the path cannot escape UPLOAD_FOLDER.
+            filepath = f"{path_stem}.{extension}"
+            save_pasted_image(binary_data, filepath)
+            print(f"Saved pasted image to {filepath}")
         else:
             print("Neither file nor image data found in the request")
-            return jsonify({'error': 'No file or image data provided'}), 400
+            return upload_error_page(user, 'No file or pasted image was received.')
         
-        # Process the image
-        item_names = process_image(filepath)
+        # Process the image. The screenshot is not needed afterwards (nothing
+        # displays it), so it is deleted right away rather than lingering
+        # for up to an hour until cleanup_uploads() gets to it.
+        try:
+            item_names = process_image(filepath)
+        finally:
+            try:
+                os.remove(filepath)
+            except OSError:
+                pass
         print(f"Detected {len(item_names)} items in the image")
         
         # Match items to database
@@ -935,16 +1480,18 @@ def upload_file():
                 total_value=get_journal_total(get_user_journal(user['id']))
             )
         
-        # Work out which of the four drops is worth the most. This mutates
-        # matched_items in place, tagging the winning slot and match.
-        recommendation = annotate_recommendation(matched_items)
+        # Value each drop and pick the two worth claiming. This mutates
+        # matched_items in place, tagging the winning slots and matches.
+        recommendations = annotate_recommendation(matched_items)
 
         # Return the results
         return render_template(
             'results.html',
             screenshot_id=screenshot_id,
             item_results=matched_items,
-            recommendation=recommendation,
+            recommendations=recommendations,
+            valuation_rule=app.config['VALUATION_RULE'],
+            valuation_label=VALUATION_RULES[app.config['VALUATION_RULE']],
             user=user,
             journal=get_user_journal(user['id']),
             total_value=get_journal_total(get_user_journal(user['id']))
@@ -987,8 +1534,8 @@ def add_to_journal():
     # Limit to adding at most 2 items at a time
     item_ids = item_ids[:2]
     
+    conn = get_db()
     try:
-        conn = get_db()
         
         for item_id in item_ids:
             cur = conn.execute(
@@ -1044,8 +1591,8 @@ def remove_from_journal():
     if not journal_id:
         return redirect(url_for('index'))
     
+    conn = get_db()
     try:
-        conn = get_db()
         
         # Verify the journal item belongs to this user
         journal_item = conn.execute(
@@ -1078,8 +1625,8 @@ def clear_journal():
     if not user:
         return redirect(url_for('login'))
     
+    conn = get_db()
     try:
-        conn = get_db()
         conn.execute(
             "DELETE FROM user_journals WHERE user_id = ?",
             (user['id'],)
@@ -1098,14 +1645,16 @@ def clear_journal():
 def handle_request_entity_too_large(error):
     """Handle 413 Request Entity Too Large error."""
     print(f"413 Error: {error}")
-    flash('The image you uploaded is too large. Please reduce its size or upload a different image.', 'error')
+    flash(f'The image you uploaded is too large (limit {MAX_UPLOAD_MB} MB). '
+          f'Please reduce its size or upload a different image.', 'error')
     return redirect(url_for('index'))
 
 @app.errorhandler(413)
 def request_entity_too_large(error):
     """Handle 413 Request Entity Too Large error (HTTP version)."""
     print(f"HTTP 413 Error: {error}")
-    flash('The image you uploaded is too large. Please reduce its size or upload a different image.', 'error')
+    flash(f'The image you uploaded is too large (limit {MAX_UPLOAD_MB} MB). '
+          f'Please reduce its size or upload a different image.', 'error')
     return redirect(url_for('index'))
 
 
@@ -1119,9 +1668,7 @@ def update_prices_job():
     try:
         # Path to the configuration file, resolved against the repo root so the
         # job does not depend on the process working directory.
-        config_path = os.environ.get(
-            'PRICE_UPDATE_CONFIG', os.path.join(BASE_DIR, 'price_update_config.json')
-        )
+        config_path = repo_path(os.environ.get('PRICE_UPDATE_CONFIG', 'price_update_config.json'))
 
         # Write a working default rather than giving up. .gitignore used to
         # ignore all *.json, so this file could never be committed and the job
@@ -1180,6 +1727,10 @@ def update_prices_job():
             cmd.append('--collections')
             cmd.extend(collections)
 
+        # Only crawl the categories the item database holds
+        if config.get('drop_pool', True):
+            cmd.append('--drop-pool')
+
         # Add max items if specified
         if max_items:
             cmd.append('--max')
@@ -1198,7 +1749,12 @@ def update_prices_job():
         if result.returncode == 0:
             app.logger.info(f"Price update completed: {result.stdout}")
         else:
-            app.logger.error(f"Price update failed: {result.stderr}")
+            # The scraper reports progress on stdout; keep its tail so the log
+            # shows where an interrupted crawl stopped, not just stderr.
+            app.logger.error(
+                f"Price update failed (exit {result.returncode}): {result.stderr}\n"
+                f"{result.stdout[-2000:]}"
+            )
         
         
     except Exception as e:
@@ -1228,15 +1784,6 @@ def init_scheduler():
         name='Daily price update',
         replace_existing=True
     )
-    from datetime import datetime
-    from apscheduler.triggers.date import DateTrigger
-    
-    '''scheduler.add_job(
-        update_prices_job,
-        trigger=DateTrigger(run_date=datetime.now()),
-        id='price_update_test_job',
-        name='Immediate test update'
-    )'''
     
     # Start the scheduler
     scheduler.start()

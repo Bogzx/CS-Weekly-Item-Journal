@@ -198,3 +198,6 @@ my_model/train/
 
 # Sample crops produced by a local run of modified_detect_text.py --save-crops
 /output/
+
+# Node dependency for Src/DB/create_cs_skins.js (npm install)
+node_modules/

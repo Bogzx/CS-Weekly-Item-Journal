@@ -1,5 +1,6 @@
 {
   "collections": [],
-  "max_items": 5000,
+  "drop_pool": true,
+  "max_items": 10000,
   "batch_size": 100
 }

@@ -2,8 +2,16 @@ import sqlite3
 import csv
 import argparse
 import os
+import sys
 import urllib.parse
 from datetime import datetime
+
+
+def now_timestamp():
+    """Local time as SQLite TEXT, the same format sqlite3's default datetime
+    adapter wrote (that adapter is deprecated since Python 3.12)."""
+    return datetime.now().isoformat(sep=' ')
+
 
 def read_csv_file(file_path):
     """
@@ -26,6 +34,15 @@ def read_csv_file(file_path):
         for row in reader:
             data.append(row)
     return data
+
+def ensure_item_columns(conn):
+    """Add columns newer than the database (databases created before the
+    `tradable` flag existed)."""
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(items)")}
+    if 'tradable' not in columns:
+        conn.execute("ALTER TABLE items ADD COLUMN tradable INTEGER NOT NULL DEFAULT 1")
+        conn.commit()
+
 
 def populate_collections(conn, collections):
     """
@@ -90,9 +107,33 @@ def generate_quality_url(base_url, quality):
     # If the URL doesn't have market_hash_name, return it unchanged
     return base_url
 
+# Every wear a skin can come in, best first.
+WEAR_QUALITIES = [
+    "Factory New",
+    "Minimal Wear",
+    "Field-Tested",
+    "Well-Worn",
+    "Battle-Scarred"
+]
+
+
+def skin_wears(skin):
+    """The wears to create for one cs_skins.csv row.
+
+    fetch_item_lists.py writes a `Wears` column (e.g. "Factory New;Minimal
+    Wear") with the wears the skin actually exists in. Without it -- a CSV
+    from the old wiki scraper -- all five are assumed, which creates rows for
+    wears that do not exist and can never be priced.
+    """
+    listed = [w.strip() for w in (skin.get('Wears') or '').split(';') if w.strip()]
+    if not listed:
+        return list(WEAR_QUALITIES)
+    return [w for w in WEAR_QUALITIES if w in listed]
+
+
 def populate_skins(conn, skins_data, target_collections=None):
     """
-    Add skin items to the database with all wear qualities
+    Add skin items to the database, one row per wear the skin comes in
     
     Parameters:
     - conn: SQLite connection
@@ -105,15 +146,6 @@ def populate_skins(conn, skins_data, target_collections=None):
     cursor = conn.cursor()
     counter = 0
     
-    # Define all wear qualities
-    wear_qualities = [
-        "Factory New",
-        "Minimal Wear", 
-        "Field-Tested", 
-        "Well-Worn",
-        "Battle-Scarred"
-    ]
-    
     for skin in skins_data:
         collection = skin.get('Collection', '')
         
@@ -123,13 +155,12 @@ def populate_skins(conn, skins_data, target_collections=None):
             
         weapon = skin.get('Weapon', '')
         skin_name = skin.get('Skin', '')
-        original_quality = skin.get('Quality', '')
         
-        # Original API URL (likely for Factory New condition)
+        # API URL for one wear; generate_quality_url() rewrites it per wear
         original_url = skin.get('Steam Market API URL', '')
         
         # Create entries for each wear quality
-        for wear_quality in wear_qualities:
+        for wear_quality in skin_wears(skin):
             # For skins, combine weapon and skin name for the full item name with wear quality
             item_name = f"{weapon} | {skin_name} ({wear_quality})" if skin_name else f"{weapon} ({wear_quality})"
             
@@ -140,7 +171,7 @@ def populate_skins(conn, skins_data, target_collections=None):
                 cursor.execute('''
                 INSERT OR IGNORE INTO items (name, collection, market_api_url, item_type, last_updated)
                 VALUES (?, ?, ?, ?, ?)
-                ''', (item_name, collection, url, 'skin', datetime.now()))
+                ''', (item_name, collection, url, 'skin', now_timestamp()))
                 
                 if cursor.rowcount > 0:
                     counter += 1
@@ -202,7 +233,7 @@ def populate_cases(conn, cases_data, target_collections=None):
             cursor.execute('''
             INSERT OR IGNORE INTO items (name, collection, market_api_url, item_type, last_updated)
             VALUES (?, ?, ?, ?, ?)
-            ''', (case_name, case_name, url, 'case', datetime.now()))
+            ''', (case_name, case_name, url, 'case', now_timestamp()))
             
             if cursor.rowcount > 0:
                 counter += 1
@@ -262,7 +293,7 @@ def populate_graffiti(conn, graffiti_data, target_collections=None):
             cursor.execute('''
             INSERT OR IGNORE INTO items (name, collection, market_api_url, item_type, last_updated)
             VALUES (?, ?, ?, ?, ?)
-            ''', (graffiti_name, collection, url, 'graffiti', datetime.now()))
+            ''', (graffiti_name, collection, url, 'graffiti', now_timestamp()))
             
             if cursor.rowcount > 0:
                 counter += 1
@@ -274,12 +305,42 @@ def populate_graffiti(conn, graffiti_data, target_collections=None):
     conn.commit()
     return counter
 
-def main():
+def populate_tools(conn, tools_data):
+    """
+    Add non-marketable drop items (cs_tools.csv) to the database
+    
+    They cannot be sold, so they are stored at a price of 0 with price_type
+    'not_tradable' and tradable = 0; bulk_scraper.py never finds them on the
+    market and leaves them alone.
+    
+    Returns:
+    - int: Number of items added
+    """
+    cursor = conn.cursor()
+    counter = 0
+    for tool in tools_data:
+        name = (tool.get('Name') or '').strip()
+        if not name:
+            continue
+        tradable = 1 if str(tool.get('Tradable', '0')).strip() == '1' else 0
+        cursor.execute('''
+        INSERT OR IGNORE INTO items
+            (name, collection, market_api_url, price, price_type, item_type, tradable, last_updated)
+        VALUES (?, ?, '', ?, ?, 'tool', ?, ?)
+        ''', (name, 'Tools', None if tradable else 0.0,
+              None if tradable else 'not_tradable', tradable, now_timestamp()))
+        counter += cursor.rowcount
+    conn.commit()
+    return counter
+
+def main(argv=None):
     parser = argparse.ArgumentParser(description='Populate CS:GO items database with specific collections')
     parser.add_argument('--db', type=str, default='csgo_items.db', help='Path to SQLite database')
     parser.add_argument('--skins', type=str, default='cs_skins.csv', help='Path to skins CSV file')
     parser.add_argument('--cases', type=str, default='cs_cases.csv', help='Path to cases CSV file')
     parser.add_argument('--graffiti', type=str, default='cs_graffiti.csv', help='Path to graffiti CSV file')
+    parser.add_argument('--tools', type=str, default='cs_tools.csv',
+                        help='Path to the non-marketable drop items CSV (optional)')
     parser.add_argument('--collections', type=str, nargs='+', 
                         help='List of collections to include (if not specified, all will be included)')
     parser.add_argument('--list-collections', action='store_true', help='List all available collections and exit')
@@ -287,18 +348,17 @@ def main():
     parser.add_argument('--skins-only', action='store_true', help='Import only skins, not cases or graffiti')
     parser.add_argument('--graffiti-only', action='store_true', help='Import only graffiti, not cases or skins')
     parser.add_argument('--debug', action='store_true', help='Print debug information')
-    parser.add_argument('--no-quality-variants', action='store_true', 
-                        help='Do not create multiple quality variants for each skin')
     
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     
     # Check if database exists, if not, suggest creating it
     if not os.path.exists(args.db):
         print(f"Database {args.db} not found. Please run create_database.py first.")
-        return
+        return 1
     
     # Connect to database
     conn = sqlite3.connect(args.db)
+    ensure_item_columns(conn)
     
     # Determine what to import based on flags
     import_skins = not (args.cases_only or args.graffiti_only)
@@ -309,6 +369,9 @@ def main():
     skins_data = [] if not import_skins else read_csv_file(args.skins)
     cases_data = [] if not import_cases else read_csv_file(args.cases)
     graffiti_data = [] if not import_graffiti else read_csv_file(args.graffiti)
+    # Optional: older setups have no cs_tools.csv
+    import_tools = not (args.cases_only or args.skins_only or args.graffiti_only)
+    tools_data = read_csv_file(args.tools) if import_tools and os.path.exists(args.tools) else []
     
     if args.debug:
         if cases_data:
@@ -320,10 +383,10 @@ def main():
         if graffiti_data:
             print(f"Loaded {len(graffiti_data)} graffiti from {args.graffiti}")
     
-    if not skins_data and not cases_data and not graffiti_data:
+    if not skins_data and not cases_data and not graffiti_data and not tools_data:
         print("No data loaded. Please check CSV file paths.")
         conn.close()
-        return
+        return 1
     
     # Get all available collections for skins
     all_skin_collections = set(skin.get('Collection', '') for skin in skins_data if skin.get('Collection'))
@@ -348,7 +411,7 @@ def main():
         for collection in sorted(all_collections):
             print(f"- {collection}")
         conn.close()
-        return
+        return 0
     
     # Determine target collections
     target_collections = None
@@ -364,7 +427,7 @@ def main():
         if not target_collections:
             print("No valid collections specified. No data will be added.")
             conn.close()
-            return
+            return 1
             
         print(f"Importing items from collections: {', '.join(target_collections)}")
     else:
@@ -381,15 +444,7 @@ def main():
     
     if import_skins:
         print("Adding skins to database...")
-        if args.no_quality_variants:
-            # Use original function (not shown here - would need to be defined)
-            # skins_added = original_populate_skins(conn, skins_data, target_collections)
-            print("Note: --no-quality-variants flag is set, but the original function is not available.")
-            print("Falling back to quality variant generation.")
-            skins_added = populate_skins(conn, skins_data, target_collections)
-        else:
-            print("Creating multiple quality variants for each skin...")
-            skins_added = populate_skins(conn, skins_data, target_collections)
+        skins_added = populate_skins(conn, skins_data, target_collections)
     
     if import_cases:
         print("Adding cases to database...")
@@ -399,18 +454,22 @@ def main():
         print("Adding graffiti to database...")
         graffiti_added = populate_graffiti(conn, graffiti_data, target_collections)
     
+    tools_added = 0
+    if tools_data and not target_collections:
+        print("Adding non-tradable drop items to database...")
+        tools_added = populate_tools(conn, tools_data)
+    
     # Show a message about the multiplier effect and summary
-    if skins_added > 0 and not args.no_quality_variants:
-        print(f"Added {skins_added} skin variants (representing approximately {skins_added // 5} unique skins in 5 qualities each)")
-    else:
-        print(f"Added {skins_added} skins")
+    print(f"Added {skins_added} skin variants (one per wear each skin comes in)")
     
     print(f"Added {cases_added} cases")
     print(f"Added {graffiti_added} graffiti")
-    print(f"Database populated: Added a total of {skins_added + cases_added + graffiti_added} items")
+    print(f"Added {tools_added} non-tradable drop items")
+    print(f"Database populated: Added a total of {skins_added + cases_added + graffiti_added + tools_added} items")
     
     # Close connection
     conn.close()
+    return 0
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
