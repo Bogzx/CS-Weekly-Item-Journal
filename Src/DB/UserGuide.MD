@@ -62,7 +62,7 @@ This will:
 python Src/DB/fetch_item_lists.py
 ```
 
-This downloads `skins.json`, `crates.json` and `graffiti.json` from
+This downloads `skins.json`, `crates.json`, `graffiti.json` and `tools.json` from
 [ByMykel/CSGO-API](https://github.com/ByMykel/CSGO-API) (MIT License, an
 export of the CS2 game files kept up to date by its maintainer) and writes:
 
@@ -71,6 +71,12 @@ export of the CS2 game files kept up to date by its maintainer) and writes:
   not come in all five)
 * `cs_cases.csv`: every marketable weapon case
 * `cs_graffiti.csv`: every marketable sealed graffiti, one row per colour
+* `cs_tools.csv`: non-marketable items the weekly drop offers (currently only
+  the Charm Detachment Pack, from `tools.json`), stored as not tradable, $0
+
+`cs_cases.csv` holds every marketable weapon case and sticker capsule (a
+sticker capsule was offered in a 2023 drop); capsules are stored with
+item type `case`.
 
 Options:
 
@@ -107,6 +113,7 @@ Options:
 * `--skins path/to/skins.csv`: Specify a custom skins CSV file
 * `--cases path/to/cases.csv`: Specify a custom cases CSV file
 * `--graffiti path/to/graffiti.csv`: Specify a custom graffiti CSV file
+* `--tools path/to/tools.csv`: Non-tradable drop items (optional; skipped if the file is missing)
 * `--collections "Collection1" "Collection2"`: Only add items from specific collections
 * `--cases-only`: Only add cases (skip skins)
 * `--skins-only`: Only add skins (skip cases)
@@ -244,7 +251,7 @@ python Src/DB/create_database.py --db my_custom_db.db
 
 # Use custom paths for everything
 python Src/DB/fetch_item_lists.py --out-dir data/
-python Src/DB/populate_database.py --db my_custom_db.db --skins data/cs_skins.csv --cases data/cs_cases.csv --graffiti data/cs_graffiti.csv
+python Src/DB/populate_database.py --db my_custom_db.db --skins data/cs_skins.csv --cases data/cs_cases.csv --graffiti data/cs_graffiti.csv --tools data/cs_tools.csv
 ```
 
 ### Filtering by Item Type and Quality

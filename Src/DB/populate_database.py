@@ -35,6 +35,15 @@ def read_csv_file(file_path):
             data.append(row)
     return data
 
+def ensure_item_columns(conn):
+    """Add columns newer than the database (databases created before the
+    `tradable` flag existed)."""
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(items)")}
+    if 'tradable' not in columns:
+        conn.execute("ALTER TABLE items ADD COLUMN tradable INTEGER NOT NULL DEFAULT 1")
+        conn.commit()
+
+
 def populate_collections(conn, collections):
     """
     Add collections to the collections table
@@ -296,12 +305,42 @@ def populate_graffiti(conn, graffiti_data, target_collections=None):
     conn.commit()
     return counter
 
+def populate_tools(conn, tools_data):
+    """
+    Add non-marketable drop items (cs_tools.csv) to the database
+    
+    They cannot be sold, so they are stored at a price of 0 with price_type
+    'not_tradable' and tradable = 0; bulk_scraper.py never finds them on the
+    market and leaves them alone.
+    
+    Returns:
+    - int: Number of items added
+    """
+    cursor = conn.cursor()
+    counter = 0
+    for tool in tools_data:
+        name = (tool.get('Name') or '').strip()
+        if not name:
+            continue
+        tradable = 1 if str(tool.get('Tradable', '0')).strip() == '1' else 0
+        cursor.execute('''
+        INSERT OR IGNORE INTO items
+            (name, collection, market_api_url, price, price_type, item_type, tradable, last_updated)
+        VALUES (?, ?, '', ?, ?, 'tool', ?, ?)
+        ''', (name, 'Tools', None if tradable else 0.0,
+              None if tradable else 'not_tradable', tradable, now_timestamp()))
+        counter += cursor.rowcount
+    conn.commit()
+    return counter
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description='Populate CS:GO items database with specific collections')
     parser.add_argument('--db', type=str, default='csgo_items.db', help='Path to SQLite database')
     parser.add_argument('--skins', type=str, default='cs_skins.csv', help='Path to skins CSV file')
     parser.add_argument('--cases', type=str, default='cs_cases.csv', help='Path to cases CSV file')
     parser.add_argument('--graffiti', type=str, default='cs_graffiti.csv', help='Path to graffiti CSV file')
+    parser.add_argument('--tools', type=str, default='cs_tools.csv',
+                        help='Path to the non-marketable drop items CSV (optional)')
     parser.add_argument('--collections', type=str, nargs='+', 
                         help='List of collections to include (if not specified, all will be included)')
     parser.add_argument('--list-collections', action='store_true', help='List all available collections and exit')
@@ -319,6 +358,7 @@ def main(argv=None):
     
     # Connect to database
     conn = sqlite3.connect(args.db)
+    ensure_item_columns(conn)
     
     # Determine what to import based on flags
     import_skins = not (args.cases_only or args.graffiti_only)
@@ -329,6 +369,9 @@ def main(argv=None):
     skins_data = [] if not import_skins else read_csv_file(args.skins)
     cases_data = [] if not import_cases else read_csv_file(args.cases)
     graffiti_data = [] if not import_graffiti else read_csv_file(args.graffiti)
+    # Optional: older setups have no cs_tools.csv
+    import_tools = not (args.cases_only or args.skins_only or args.graffiti_only)
+    tools_data = read_csv_file(args.tools) if import_tools and os.path.exists(args.tools) else []
     
     if args.debug:
         if cases_data:
@@ -340,7 +383,7 @@ def main(argv=None):
         if graffiti_data:
             print(f"Loaded {len(graffiti_data)} graffiti from {args.graffiti}")
     
-    if not skins_data and not cases_data and not graffiti_data:
+    if not skins_data and not cases_data and not graffiti_data and not tools_data:
         print("No data loaded. Please check CSV file paths.")
         conn.close()
         return 1
@@ -411,12 +454,18 @@ def main(argv=None):
         print("Adding graffiti to database...")
         graffiti_added = populate_graffiti(conn, graffiti_data, target_collections)
     
+    tools_added = 0
+    if tools_data and not target_collections:
+        print("Adding non-tradable drop items to database...")
+        tools_added = populate_tools(conn, tools_data)
+    
     # Show a message about the multiplier effect and summary
     print(f"Added {skins_added} skin variants (one per wear each skin comes in)")
     
     print(f"Added {cases_added} cases")
     print(f"Added {graffiti_added} graffiti")
-    print(f"Database populated: Added a total of {skins_added + cases_added + graffiti_added} items")
+    print(f"Added {tools_added} non-tradable drop items")
+    print(f"Database populated: Added a total of {skins_added + cases_added + graffiti_added + tools_added} items")
     
     # Close connection
     conn.close()

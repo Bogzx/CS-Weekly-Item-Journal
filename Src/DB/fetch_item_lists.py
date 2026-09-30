@@ -2,11 +2,12 @@
 fetch_item_lists.py
 
 Build the item lists that populate_database.py reads -- cs_skins.csv,
-cs_cases.csv and cs_graffiti.csv -- from ByMykel's CSGO-API, an MIT-licensed
-JSON export of the CS2 game files (https://github.com/ByMykel/CSGO-API).
+cs_cases.csv, cs_graffiti.csv and cs_tools.csv -- from ByMykel's CSGO-API, an
+MIT-licensed JSON export of the CS2 game files
+(https://github.com/ByMykel/CSGO-API).
 
 This replaces create_cs_skins.js, which scraped counterstrike.fandom.com and
-has been answered with HTTP 403 since at least 2026-09. It is three HTTP GETs
+has been answered with HTTP 403 since at least 2026-09. It is four HTTP GETs
 to raw.githubusercontent.com (no Steam requests, no Node) and also fixes two
 data problems the wiki scrape had:
 
@@ -44,19 +45,31 @@ import requests
 
 API_REPO_URL = "https://raw.githubusercontent.com/ByMykel/CSGO-API/{ref}/public/api/en/"
 DEFAULT_REF = "main"
-SOURCE_FILES = ("skins.json", "crates.json", "graffiti.json")
+SOURCE_FILES = ("skins.json", "crates.json", "graffiti.json", "tools.json")
 REQUEST_TIMEOUT = 60
 
 WEAR_ORDER = ["Factory New", "Minimal Wear", "Field-Tested", "Well-Worn", "Battle-Scarred"]
 
-# Crate types that can show up in a weekly care package. The API also lists
-# sticker/autograph capsules, souvenir packages and music kit boxes, none of
-# which the weekly drop offers.
-CASE_TYPES = ("Case",)
+# Crate types that can show up in a weekly care package: weapon cases, and
+# sticker capsules ("Sticker Capsule 2" was offered in a 2023 drop, see
+# Training_Images/TEST FINAL.png). Autograph capsules, souvenir packages and
+# music kit boxes are not offered by the weekly drop.
+CASE_TYPES = ("Case", "Sticker Capsule")
+
+# Non-marketable items the weekly drop offers, by ByMykel tools.json id, with
+# the name the drop card shows (it differs from the API's inventory name).
+# They cannot be sold, so they are stored as worth $0 and marked not
+# tradable. Only items actually seen in a drop are listed: the other five
+# tools (Name Tag, Storage Unit, StatTrak Swap Tool, Chicken Egg/Feed) are
+# store or event items with no evidence of dropping.
+DROP_TOOLS = {
+    "tool-4": "Charm Detachment Pack",  # API name "Charm Detachments"; 3 of 20 labelled drops
+}
 
 SKIN_FIELDS = ["Collection", "Weapon", "Skin", "Quality", "Steam Market API URL", "Wears"]
 CASE_FIELDS = ["Case", "Steam Market API URL"]
 GRAFFITI_FIELDS = ["Collection", "Name", "FullName", "SteamMarketURL"]
+TOOL_FIELDS = ["Name", "Source ID", "Tradable"]
 
 
 class SourceError(RuntimeError):
@@ -147,7 +160,7 @@ def skin_rows(skins, include_knives_and_gloves=False):
 
 
 def case_rows(crates):
-    """Rows for cs_cases.csv: marketable weapon cases only."""
+    """Rows for cs_cases.csv: marketable weapon cases and sticker capsules."""
     rows = []
     seen = set()
     for crate in crates:
@@ -178,6 +191,18 @@ def graffiti_rows(graffiti):
     return rows
 
 
+def tool_rows(tools):
+    """Rows for cs_tools.csv: the DROP_TOOLS the API still lists."""
+    by_id = {tool.get("id"): tool for tool in tools if isinstance(tool, dict)}
+    rows = []
+    for tool_id, drop_name in DROP_TOOLS.items():
+        if tool_id not in by_id:
+            print(f"Warning: {tool_id} ({drop_name}) is no longer in tools.json; skipped")
+            continue
+        rows.append({"Name": drop_name, "Source ID": tool_id, "Tradable": "0"})
+    return rows
+
+
 def write_csv(path, fieldnames, rows):
     """Write rows via a temp file so a failure never leaves a half-written CSV."""
     tmp_path = path + ".tmp"
@@ -196,6 +221,9 @@ def build_item_lists(data, include_knives_and_gloves=False):
         "cs_graffiti.csv": (GRAFFITI_FIELDS, graffiti_rows(data["graffiti.json"])),
     }
     empty = [name for name, (_, rows) in lists.items() if not rows]
+    # The tool list is a short allowlist and may legitimately come back
+    # empty; it is written anyway so a stale file does not linger.
+    lists["cs_tools.csv"] = (TOOL_FIELDS, tool_rows(data["tools.json"]))
     if empty:
         # Same guard as the old scraper should have had: an empty list means
         # the source changed shape, and writing it would wipe a good CSV.
@@ -205,12 +233,12 @@ def build_item_lists(data, include_knives_and_gloves=False):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        description="Write cs_skins.csv, cs_cases.csv and cs_graffiti.csv from ByMykel's CSGO-API")
+        description="Write cs_skins.csv, cs_cases.csv, cs_graffiti.csv and cs_tools.csv from ByMykel's CSGO-API")
     parser.add_argument("--out-dir", default=".", help="Directory to write the CSV files to")
     parser.add_argument("--ref", default=DEFAULT_REF,
                         help="Git ref of ByMykel/CSGO-API to download (branch, tag or commit)")
     parser.add_argument("--source-dir",
-                        help="Read skins.json, crates.json and graffiti.json from this directory instead")
+                        help="Read skins.json, crates.json, graffiti.json and tools.json from this directory instead")
     parser.add_argument("--include-knives-and-gloves", action="store_true",
                         help="Also list ★ knives and gloves (never offered by the weekly drop)")
     args = parser.parse_args(argv)

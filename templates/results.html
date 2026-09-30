@@ -260,6 +260,10 @@
             font-weight: bold;
             color: #1b7a34;
         }
+        .not-tradable {
+            font-weight: bold;
+            color: #6c757d;
+        }
         .price-unknown {
             color: #6c757d;
             font-style: italic;
@@ -369,7 +373,10 @@
                         <h3>Detected: {{ result.original }}
                             {% if result.pick_rank %}<span class="rec-badge">Pick {{ result.pick_rank }}</span>{% endif %}
                         </h3>
-                        {% if result.value is not none %}
+                        {% if result.not_tradable %}
+                        <p class="slot-value">Value: <span class="not-tradable">Not tradable — $0</span>
+                            <span class="score">(cannot be sold on the Steam Market; never recommended)</span></p>
+                        {% elif result.value is not none %}
                         <p class="slot-value">
                             Value: <span class="price-tag">${{ "%.2f"|format(result.value) }}</span>
                             {% if result.priced_variants > 1 %}
@@ -387,7 +394,9 @@
                                     <input type="checkbox" name="item_id" value="{{ match.id }}" id="item-{{ match.id }}" class="item-checkbox"{% if match.recommended %} checked{% endif %}>
                                     <label for="item-{{ match.id }}">
                                         <strong>{{ match.name }}</strong>
-                                        {% if match.price_value is not none %}
+                                        {% if match.tradable is sameas false %}
+                                        <span class="not-tradable">- Not tradable — $0</span>
+                                        {% elif match.price_value is not none %}
                                         <span class="price-tag">- ${{ "%.2f"|format(match.price_value) }}</span>
                                         {% else %}
                                         <span class="price-unknown">- no price data</span>

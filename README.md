@@ -118,7 +118,7 @@ one. Everything else has a working default.
 ### Build the item database
 
 The item list comes from [ByMykel/CSGO-API](https://github.com/ByMykel/CSGO-API),
-an MIT-licensed JSON export of the CS2 game files: three downloads from
+an MIT-licensed JSON export of the CS2 game files: four downloads from
 raw.githubusercontent.com, no Steam requests and no Node.js. Prices come from
 the Steam Market and take longer (see below).
 
@@ -130,11 +130,12 @@ All database scripts live in `Src/DB/` and are run from the repository root:
 python Src/DB/create_database.py
 
 # 2. Download the skin, case and graffiti lists (a few seconds) and write
-#    cs_skins.csv, cs_cases.csv and cs_graffiti.csv. Pin a snapshot with
+#    cs_skins.csv, cs_cases.csv, cs_graffiti.csv and cs_tools.csv. Pin a snapshot with
 #    --ref <commit>; add --include-knives-and-gloves if you want ★ items too.
 python Src/DB/fetch_item_lists.py
 
-# 3. Load them into the database (~6,800 skin/wear rows, 42 cases, ~1,800 graffiti)
+# 3. Load them into the database (~6,800 skin/wear rows, 42 cases, 91 sticker
+#    capsules, ~1,800 graffiti and the non-tradable Charm Detachment Pack)
 python Src/DB/populate_database.py
 
 # 4. Fetch prices for everything the weekly drop can offer: ~900 Steam
@@ -211,6 +212,9 @@ Graffiti are treated the same way when the scan misses the colour in brackets
 (it usually does): every colour is listed and valued as a range. When the
 colour is read, that exact colour is used. Cases have a single price, so the
 rule only changes how skins and colour-less graffiti compare to them.
+
+Drop items that cannot be sold (so far only the **Charm Detachment Pack**)
+match normally but show **Not tradable — $0** and are never recommended.
 
 ## 🔄 Updating Prices
 

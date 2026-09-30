@@ -1,0 +1,38 @@
+[
+ {
+  "id": "tool-1",
+  "name": "Name Tag",
+  "market_hash_name": null,
+  "def_index": "1200"
+ },
+ {
+  "id": "tool-2",
+  "name": "Storage Unit",
+  "market_hash_name": null,
+  "def_index": "1201"
+ },
+ {
+  "id": "tool-3",
+  "name": "StatTrak™ Swap Tool",
+  "market_hash_name": null,
+  "def_index": "1324"
+ },
+ {
+  "id": "tool-4",
+  "name": "Charm Detachments",
+  "market_hash_name": null,
+  "def_index": "4950"
+ },
+ {
+  "id": "tool-5",
+  "name": "Chicken Egg",
+  "market_hash_name": null,
+  "def_index": "4948"
+ },
+ {
+  "id": "tool-6",
+  "name": "Chicken Feed",
+  "market_hash_name": null,
+  "def_index": "4949"
+ }
+]
