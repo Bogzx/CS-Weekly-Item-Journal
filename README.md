@@ -151,6 +151,29 @@ Knives and gloves are left out by default: the weekly drop never offers them,
 and they share finish names with ordinary skins ("★ Butterfly Knife | Forest
 DDPAT"), so they only add wrong match candidates and thousands of rows to price.
 
+### Upgrading a database built with an older version
+
+Back up `csgo_items.db` first. Then:
+
+* **Accounts and journals are kept as they are.** `app.py` adds the new
+  columns when it starts. Journal entries store the item's name and price from
+  when you added them, so they do not depend on the item tables.
+* **Rebuild the item tables. Don't populate on top of the old ones.** Older
+  versions built the list from the fandom wiki, which named collections
+  differently (graffiti were under "Default Graffiti Collection"), and they
+  created all five wears for every skin. Running `populate_database.py` on that
+  database adds a second row for most items and keeps rows for wears that don't
+  exist. Instead, run `python Src/DB/create_database.py --force`, then steps
+  2–4 above. `--force` only drops `items`, `collections` and `test_table`, but
+  it also drops the stored prices, so the ~2.5 h price crawl has to run again.
+* **History weeks are regrouped.** Weeks are worked out when the page loads,
+  and nothing about them is stored. The default now starts each week at the
+  CS2 weekly reset (Wednesday 01:00 UTC). Older versions used Monday-based
+  weeks, so entries made on a Monday, a Tuesday or early on a Wednesday now
+  count towards the previous week. Week labels are ISO week numbers, which can
+  be one higher than the old ones for the same dates. `WEEK_BOUNDARY=iso`
+  brings back Monday weeks.
+
 ### Run
 
 ```bash
