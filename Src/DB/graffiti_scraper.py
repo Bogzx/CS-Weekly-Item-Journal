@@ -154,13 +154,14 @@ def create_price_api_url(name):
     encoded_name = urllib.parse.quote(name)
     return f"https://steamcommunity.com/market/priceoverview/?appid=730&market_hash_name={encoded_name}"
 
-def fetch_all_graffiti(max_items=None, batch_size=100):
+def fetch_all_graffiti(max_items=None, batch_size=100, delay=5):
     """
     Fetch all available CS2 graffiti items in batches
     
     Parameters:
     - max_items (int): Maximum number of items to fetch (None for all)
-    - batch_size (int): Number of items to fetch per request
+    - batch_size (int): Number of items to request per call (Steam returns at most 10)
+    - delay (float): Seconds to sleep between pages
     
     Returns:
     - list: List of processed graffiti items with extracted data
@@ -173,8 +174,9 @@ def fetch_all_graffiti(max_items=None, batch_size=100):
         print(f"Limited to {total_items} items")
     
     all_graffiti = []
+    start = 0
     
-    for start in range(0, total_items, batch_size):
+    while start < total_items:
         # Adjust the final batch size if needed
         current_batch_size = min(batch_size, total_items - start)
         
@@ -198,9 +200,19 @@ def fetch_all_graffiti(max_items=None, batch_size=100):
         
         print(f"Fetched {len(batch_items)} items. Total collected: {len(all_graffiti)}")
         
+        if not batch_items:
+            # End of the listing, or Steam refused the page after retrying.
+            # Either way, requesting the next page would only hammer it.
+            break
+        
+        # Advance by what Steam actually returned. Steam caps unauthenticated
+        # pages at 10 results, so stepping by batch_size (100) skipped 90% of
+        # all graffiti -- the same bug bulk_scraper.py had.
+        start += len(batch_items)
+        
         # Sleep between batches to avoid rate limiting
-        if start + batch_size < total_items:
-            time.sleep(5)  # 5 second delay between batches
+        if start < total_items:
+            time.sleep(delay)
     
     return all_graffiti
 

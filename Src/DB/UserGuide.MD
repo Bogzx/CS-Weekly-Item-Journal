@@ -89,6 +89,10 @@ and leaves any existing CSVs untouched.
 > answering it with HTTP 403. `create_cases.py`, which derived the case list
 > from that CSV, went with it.
 
+`graffiti_scraper.py` is an older, slower way to build `cs_graffiti.csv`
+from the Steam Market listing (~180 requests at 10 items each). You do not
+need it: `fetch_item_lists.py` already writes the graffiti list.
+
 ### 3. Populating the Database
 
 Now you can populate the database with items from the CSV files.
