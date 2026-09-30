@@ -1,0 +1,5 @@
+# Pin the rule set so `ruff check .` means the same thing on every ruff
+# version (newer releases widened the defaults). These are ruff's classic
+# defaults: pyflakes plus the pycodestyle errors that are real bugs.
+[lint]
+select = ["E4", "E7", "E9", "F"]

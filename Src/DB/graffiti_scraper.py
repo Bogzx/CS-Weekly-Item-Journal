@@ -1,11 +1,8 @@
 import requests
-import json
 import csv
 import time
 import urllib.parse
 import argparse
-import os
-from datetime import datetime
 
 try:
     from steam_headers import STEAM_HEADERS, STEAM_TIMEOUT

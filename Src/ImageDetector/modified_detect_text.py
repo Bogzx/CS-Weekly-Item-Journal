@@ -1,5 +1,4 @@
 import cv2
-import numpy as np
 import easyocr
 from ultralytics import YOLO
 import os
