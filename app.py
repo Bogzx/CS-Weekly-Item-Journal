@@ -692,6 +692,27 @@ def ensure_dict(obj):
     # If all else fails, just wrap it in a dictionary
     return {'value': obj}
 
+def closest_graffiti_colour(ocr_colour, variations):
+    """The graffiti variation whose '(Colour)' best matches the OCR'd colour.
+
+    Returns None when nothing is reasonably close (an OCR fragment rather
+    than a colour), so the caller keeps the matcher's own pick.
+    """
+    from difflib import SequenceMatcher
+
+    wanted = ocr_colour.strip().lower()
+    best, best_ratio = None, 0.0
+    for variation in variations or []:
+        variation = ensure_dict(variation)
+        found = re.search(r'\(([^()]*)\)$', variation.get('name') or '')
+        if not found:
+            continue
+        ratio = SequenceMatcher(None, wanted, found.group(1).lower()).ratio()
+        if ratio > best_ratio:
+            best, best_ratio = variation, ratio
+    return best if best_ratio >= 0.6 else None
+
+
 def match_items_in_database(item_names):
     """Match detected item names to the database using the ItemMatcher."""
     results = []
@@ -771,9 +792,38 @@ def match_items_in_database(item_names):
                 # Use case matches instead of all matches
                 match_list = case_matches
             
-            # For graffiti items, only show the best match
+            # For graffiti items, only show the best match -- unless the OCR
+            # text lost the colour in brackets (the crop usually cuts it off),
+            # in which case the best match is an arbitrary colour and every
+            # colour is listed, like the wears of a skin.
             elif best_match.get('item_type') == 'graffiti':
+                colour = re.search(r'\(([^)]*)\)\s*$', cleaned_name)
+                if colour:
+                    # Every colour normalises to the same name, so the
+                    # matcher's top hit is an arbitrary one; use the colour
+                    # that was actually read.
+                    chosen = closest_graffiti_colour(colour.group(1), match_result['all_wear_variations'])
+                    if chosen is not None:
+                        best_match_entry.update(
+                            id=chosen.get('id'), name=chosen.get('name', 'Unknown Item'),
+                            collection=chosen.get('collection', ''), price=chosen.get('price'),
+                            price_type=chosen.get('price_type', 'unknown'))
                 match_list = [best_match_entry]
+                if not colour:
+                    for variation in match_result['all_wear_variations']:
+                        variation = ensure_dict(variation)
+                        if variation.get('id') == best_match.get('id'):
+                            continue
+                        match_list.append({
+                            'id': variation.get('id'),
+                            'name': variation.get('name', 'Unknown Item'),
+                            'collection': variation.get('collection', ''),
+                            'price': variation.get('price'),
+                            'price_type': variation.get('price_type', 'unknown'),
+                            'item_type': variation.get('item_type', ''),
+                            'score': 0.0,
+                            'confidence': 'variation'
+                        })
             
             # For all other items, process normally
             else:
@@ -856,17 +906,24 @@ def _as_price(value):
     return price
 
 
-def base_item_name(name):
-    """Strip a trailing skin wear, e.g. 'AK-47 | Redline (Field-Tested)' -> 'AK-47 | Redline'.
+GRAFFITI_PREFIX = 'Sealed Graffiti | '
 
-    Only the five wears are stripped. A graffiti colour such as
-    '(Tiger Orange)' names a different market item, not a wear, and stays.
+
+def base_item_name(name):
+    """The item without the variant the drop screen does not reliably show.
+
+    'AK-47 | Redline (Field-Tested)' -> 'AK-47 | Redline' (the screen never
+    shows wear) and 'Sealed Graffiti | Sorry (Tiger Orange)' ->
+    'Sealed Graffiti | Sorry' (the OCR crop usually cuts the colour off).
+    Anything else is returned unchanged.
     """
     name = name or ''
     for wear in WEAR_NAMES:
         suffix = f' ({wear})'
         if name.endswith(suffix):
             return name[:-len(suffix)]
+    if name.startswith(GRAFFITI_PREFIX):
+        return re.sub(r'\s*\([^()]*\)$', '', name)
     return name
 
 
@@ -890,8 +947,9 @@ def annotate_recommendation(item_results, rule=None, picks=RECOMMENDED_PICKS):
     sometimes a *different item* that merely fuzzy-matched the OCR text -- so
     skins were systematically overvalued against cases and graffiti.
 
-    Now a slot is valued only over its **top match's own wear variants**
-    (same item name once the wear is stripped). `rule` decides which of those
+    Now a slot is valued only over its **top match's own variants** (same
+    item once the wear -- or a graffiti's colour, when OCR lost it -- is
+    stripped; see base_item_name). `rule` decides which of those
     prices counts; see VALUATION_RULES. The full min-max range is kept for
     the template.
 
@@ -900,7 +958,8 @@ def annotate_recommendation(item_results, rule=None, picks=RECOMMENDED_PICKS):
     value came from pre-selected.
 
     Sets on every slot: `value`, `value_match`, `price_min`, `price_max`,
-    `priced_variants`, `variant_count` and `display_name`; on every match:
+    `priced_variants`, `variant_count`, `variant_kind` and `display_name`;
+    on every match:
     `price_value`. Recommended slots and their `value_match` also get
     `recommended = True`, and slots get `pick_rank` (1-based).
 
@@ -918,7 +977,8 @@ def annotate_recommendation(item_results, rule=None, picks=RECOMMENDED_PICKS):
             match['price_value'] = _as_price(match.get('price'))
 
         result.update(value=None, value_match=None, price_min=None, price_max=None,
-                      priced_variants=0, variant_count=0, display_name=None)
+                      priced_variants=0, variant_count=0, display_name=None,
+                      variant_kind='wears')
         if not matches:
             continue
 
@@ -928,6 +988,8 @@ def annotate_recommendation(item_results, rule=None, picks=RECOMMENDED_PICKS):
                         key=lambda m: m['price_value'])
 
         result['display_name'] = family_name
+        if family_name.startswith(GRAFFITI_PREFIX):
+            result['variant_kind'] = 'colours'
         result['variant_count'] = len(family)
         result['priced_variants'] = len(priced)
         if not priced:

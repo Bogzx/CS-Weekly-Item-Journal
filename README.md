@@ -207,8 +207,10 @@ prices can differ by 100×. The app:
    the 4) and pre-selects the entry the value came from. Change it to the real
    wear once you have claimed the item, so the journal records the right price.
 
-Cases and graffiti have a single price, so the rule only changes how skins
-compare to them.
+Graffiti are treated the same way when the scan misses the colour in brackets
+(it usually does): every colour is listed and valued as a range. When the
+colour is read, that exact colour is used. Cases have a single price, so the
+rule only changes how skins and colour-less graffiti compare to them.
 
 ## 🔄 Updating Prices
 

@@ -323,15 +323,15 @@
                             <strong>{{ rec.display_name }}</strong>
                             — <span class="rec-price">${{ "%.2f"|format(rec.value) }}</span>
                             {% if rec.priced_variants > 1 %}
-                            <span class="score">(${{ "%.2f"|format(rec.price_min) }}–${{ "%.2f"|format(rec.price_max) }} across {{ rec.priced_variants }} wears)</span>
+                            <span class="score">(${{ "%.2f"|format(rec.price_min) }}–${{ "%.2f"|format(rec.price_max) }} across {{ rec.priced_variants }} {{ rec.variant_kind }})</span>
                             {% endif %}
                         </li>
                     {% endfor %}
                     </ol>
                     <p class="score">
                         Ranked by the most recent Steam Market price stored for each item. The drop
-                        screen does not show a skin's wear, so skins are valued at their
-                        <strong>{{ valuation_label }}</strong> (<code>VALUATION_RULE={{ valuation_rule }}</code>).
+                        screen does not show a skin's wear (and the scan often misses a graffiti's
+                        colour), so those are valued at their <strong>{{ valuation_label }}</strong> (<code>VALUATION_RULE={{ valuation_rule }}</code>).
                         The matching entries are pre-selected below; change them once you know the wear,
                         or untick one if the match looks wrong.
                     </p>
@@ -362,7 +362,7 @@
                         <p class="slot-value">
                             Value: <span class="price-tag">${{ "%.2f"|format(result.value) }}</span>
                             {% if result.priced_variants > 1 %}
-                            <span class="score">· range ${{ "%.2f"|format(result.price_min) }}–${{ "%.2f"|format(result.price_max) }} over {{ result.priced_variants }} priced wears ({{ valuation_label }} counts)</span>
+                            <span class="score">· range ${{ "%.2f"|format(result.price_min) }}–${{ "%.2f"|format(result.price_max) }} over {{ result.priced_variants }} priced {{ result.variant_kind }} ({{ valuation_label }} counts)</span>
                             {% endif %}
                         </p>
                         {% endif %}
