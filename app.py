@@ -846,10 +846,10 @@ def login():
                 (username,)
             ).fetchone()
             
-            if user is None:
-                error = 'Invalid username.'
-            elif not check_password_hash(user['password_hash'], password):
-                error = 'Invalid password.'
+            # One message for both cases so the form cannot be used to find
+            # out which usernames are registered.
+            if user is None or not check_password_hash(user['password_hash'], password):
+                error = 'Invalid username or password.'
             else:
                 # Login successful
                 session.clear()
