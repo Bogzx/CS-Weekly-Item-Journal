@@ -1,0 +1,16 @@
+{
+  "name": "cs-weekly-item-journal-scrapers",
+  "private": true,
+  "description": "Node dependency for Src/DB/create_cs_skins.js",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "scrape-skins": "node Src/DB/create_cs_skins.js",
+    "test": "node --test tests/js/create_cs_skins.test.js"
+  },
+  "dependencies": {
+    "node-html-parser": "^7.0.1"
+  }
+}
