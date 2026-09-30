@@ -1198,7 +1198,12 @@ def update_prices_job():
         if result.returncode == 0:
             app.logger.info(f"Price update completed: {result.stdout}")
         else:
-            app.logger.error(f"Price update failed: {result.stderr}")
+            # The scraper reports progress on stdout; keep its tail so the log
+            # shows where an interrupted crawl stopped, not just stderr.
+            app.logger.error(
+                f"Price update failed (exit {result.returncode}): {result.stderr}\n"
+                f"{result.stdout[-2000:]}"
+            )
         
         
     except Exception as e:
