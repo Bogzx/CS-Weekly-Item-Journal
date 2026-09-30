@@ -685,6 +685,16 @@ PASTED_IMAGE_EXTENSIONS = {
 # Formats cv2.imread can read, as Pillow names them -> extension to save under.
 CV2_READABLE_FORMATS = {'PNG': 'png', 'JPEG': 'jpg', 'WEBP': 'webp', 'BMP': 'bmp'}
 
+# The only formats Pillow may even try to open. Without this list Image.open
+# probes every plugin it has, and loading an EPS/PS file runs Ghostscript on
+# the uploaded PostScript when it is installed (it is on most Linux hosts).
+ALLOWED_IMAGE_FORMATS = ('PNG', 'JPEG', 'WEBP', 'BMP', 'GIF')
+
+# Largest image accepted, in pixels. An 8K screenshot is ~33 MP. Pillow only
+# refuses images over ~179 MP, so a 20 MB upload could otherwise be a 13000 x
+# 13000 PNG that decodes to hundreds of MB in Pillow and again in OpenCV.
+MAX_IMAGE_PIXELS = 40_000_000
+
 
 def decode_pasted_image(image_data):
     """Split a pasted image into (extension, bytes).
@@ -727,17 +737,22 @@ def decode_pasted_image(image_data):
 def image_format(binary_data):
     """Pillow's format name (e.g. 'PNG') for bytes that decode as an image.
 
-    Raises ValueError for anything else, including decompression bombs.
+    Only ALLOWED_IMAGE_FORMATS are considered. Raises ValueError for anything
+    else, including decompression bombs and images over MAX_IMAGE_PIXELS.
     """
     from io import BytesIO
     from PIL import Image, UnidentifiedImageError
 
     try:
-        with Image.open(BytesIO(binary_data)) as img:
+        with Image.open(BytesIO(binary_data), formats=ALLOWED_IMAGE_FORMATS) as img:
             fmt = img.format
+            pixels = img.width * img.height
             img.verify()
     except (UnidentifiedImageError, OSError, SyntaxError, Image.DecompressionBombError) as e:
         raise ValueError(f'not a readable image ({e.__class__.__name__})')
+    if pixels > MAX_IMAGE_PIXELS:
+        raise ValueError(f'image is too large ({pixels / 1e6:.0f} megapixels, '
+                         f'limit {MAX_IMAGE_PIXELS / 1e6:.0f})')
     return fmt
 
 
@@ -763,7 +778,7 @@ def save_uploaded_image(binary_data, path_stem):
         return filepath
 
     filepath = f'{path_stem}.png'
-    with Image.open(BytesIO(binary_data)) as img:
+    with Image.open(BytesIO(binary_data), formats=ALLOWED_IMAGE_FORMATS) as img:
         if img.mode not in ('RGB', 'RGBA', 'L'):
             img = img.convert('RGBA')
         img.save(filepath)
@@ -775,13 +790,17 @@ def save_pasted_image(binary_data, filepath, max_dimension=2048):
     from io import BytesIO
     from PIL import Image
 
-    img = Image.open(BytesIO(binary_data))
+    img = Image.open(BytesIO(binary_data), formats=ALLOWED_IMAGE_FORMATS)
     if img.width > max_dimension or img.height > max_dimension:
         # Preserve aspect ratio; thumbnail() never upscales.
         img.thumbnail((max_dimension, max_dimension), Image.LANCZOS)
         print(f"Resized image to {img.width}x{img.height}")
-    if filepath.endswith('.jpg') and img.mode not in ('RGB', 'L'):
-        img = img.convert('RGB')
+    if filepath.endswith('.jpg'):
+        if img.mode not in ('RGB', 'L'):
+            img = img.convert('RGB')
+    elif img.mode not in ('RGB', 'RGBA', 'L', 'P'):
+        # e.g. a CMYK JPEG pasted with a data:image/png header
+        img = img.convert('RGBA')
     img.save(filepath, optimize=True, quality=85)
 
 
