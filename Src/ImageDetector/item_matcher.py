@@ -1,7 +1,6 @@
 import sqlite3
 import re
 from difflib import SequenceMatcher
-import os
 
 class ItemMatcher:
     def __init__(self, db_path="csgo_items.db"):
@@ -25,6 +24,15 @@ class ItemMatcher:
         
         # Pre-compile regex patterns
         self.clean_pattern = re.compile(r'[^\w\s]')
+        # Wears, with the hyphen optional ("Field-Tested", "field tested").
+        self.wear_pattern = re.compile(
+            r'\b(?:' + '|'.join(
+                r'[\s-]*'.join(re.escape(part) for part in re.split(r'[\s-]+', wear.lower()))
+                for wear in self.wear_conditions
+            ) + r')\b'
+        )
+        # Filler words, matched as whole words only.
+        self.noise_pattern = re.compile(r'\b(?:skin|weapon|case|item|collection)\b')
         
     def get_db_connection(self):
         """Get a connection to the SQLite database."""
@@ -92,16 +100,19 @@ class ItemMatcher:
         text = text.replace('5', 's')  # Replace 5 with letter s
         text = text.replace('8', 'b')  # Replace 8 with letter b
         
+        # Remove the wear first. Punctuation used to be replaced before this,
+        # so "field-tested", "well-worn" and "battle-scarred" had already
+        # become "field tested" etc. and were never stripped -- three of the
+        # five wear variants of every skin kept extra words that skewed the
+        # similarity towards Factory New / Minimal Wear.
+        text = self.wear_pattern.sub(' ', text)
+        
         # Replace special characters with spaces
         text = self.clean_pattern.sub(' ', text)
         
-        # Remove wear condition for better base matching
-        for wear in self.wear_conditions:
-            text = text.replace(wear.lower(), '')
-        
-        # Remove other common words that might confuse matching
-        for word in ['skin', 'weapon', 'case', 'item', 'collection']:
-            text = text.replace(word, '')
+        # Remove other common words that might confuse matching. As whole
+        # words: plain substring removal turned e.g. "showcase" into "show".
+        text = self.noise_pattern.sub(' ', text)
         
         # Normalize whitespace
         text = re.sub(r'\s+', ' ', text).strip()
