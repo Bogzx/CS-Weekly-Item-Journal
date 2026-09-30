@@ -123,6 +123,25 @@ def resolve_secret_key(raw):
 app = Flask(__name__)
 app.secret_key = resolve_secret_key(os.environ.get('SECRET_KEY'))
 
+# Behind a reverse proxy every request arrives from the proxy's address, so
+# the login throttle would lock out everyone at once (or no one). Set
+# TRUSTED_PROXIES to the number of proxies in front of the app to take the
+# client address, scheme and host from their X-Forwarded-* headers. It stays
+# 0 by default: trusting those headers without a proxy lets any client spoof
+# its address and dodge the throttle.
+_raw_wsgi_app = app.wsgi_app
+
+
+def trust_proxies(count):
+    """Honour X-Forwarded-For/-Proto/-Host from `count` proxies (0 = none)."""
+    from werkzeug.middleware.proxy_fix import ProxyFix
+
+    app.wsgi_app = (ProxyFix(_raw_wsgi_app, x_for=count, x_proto=count, x_host=count)
+                    if count > 0 else _raw_wsgi_app)
+
+
+trust_proxies(int(os.environ.get('TRUSTED_PROXIES', '0')))
+
 # How long a "remember me" session lasts. Sessions without "remember me" get
 # REMEMBER_ME_OFF_LIFETIME instead (see login()).
 REMEMBERED_SESSION_LIFETIME = timedelta(days=int(os.environ.get('SESSION_LIFETIME_DAYS', '120')))
@@ -448,25 +467,58 @@ def _parse_timestamp(value):
         return None
 
 
-def bucket_by_iso_week(rows):
-    """Aggregate (created_at, item_price) rows into ISO-week buckets.
+# How the history page cuts time into weeks.
+#   cs2 - CS2's weekly care-package reset (default). Public trackers agree it
+#         is Wednesday 01:00 GMT (Tuesday 6 PM Pacific): gamerevolution.com,
+#         weeklyreset.net, skinsmetric.com, checked 2026-09-30. None says
+#         whether it moves with daylight saving; CS2_RESET_HOUR_UTC adjusts it.
+#   iso - ISO weeks, Monday 00:00 UTC.
+WEEK_BOUNDARIES = ('cs2', 'iso')
+CS2_RESET_WEEKDAY = 2  # Monday = 0, so Wednesday
+CS2_RESET_HOUR_UTC = int(os.environ.get('CS2_RESET_HOUR_UTC', '1'))
+
+
+def resolve_week_boundary(raw):
+    boundary = (raw or 'cs2').strip().lower()
+    if boundary not in WEEK_BOUNDARIES:
+        logging.getLogger(__name__).warning(
+            "Unknown WEEK_BOUNDARY %r; using 'cs2'. Valid values: %s", raw, ', '.join(WEEK_BOUNDARIES))
+        return 'cs2'
+    return boundary
+
+
+app.config['WEEK_BOUNDARY'] = resolve_week_boundary(os.environ.get('WEEK_BOUNDARY'))
+
+
+def bucket_by_week(rows, boundary=None):
+    """Aggregate (created_at, item_price) rows into weekly buckets.
+
+    Timestamps are UTC (SQLite CURRENT_TIMESTAMP). With boundary 'iso' a week
+    runs Monday 00:00 to Sunday 23:59 and is labelled with its ISO week; with
+    'cs2' it runs from one care-package reset to the next and is labelled
+    with the ISO week of the Wednesday it starts on, with `week_start` being
+    that reset.
 
     Weeks used to come from SQLite's strftime('%Y-W%W'), which is not an ISO
     week: it counts from the year's first Monday, so the days before it fall
-    into a "W00" and one Monday-Sunday week straddling New Year was split into
-    two buckets (2025-W52 and 2026-W00). ISO weeks always run Monday-Sunday
-    and belong to the year that holds their Thursday.
+    into a "W00" and one week straddling New Year was split into two buckets.
 
-    Returns buckets oldest-first, each with the ISO week label, its Monday,
-    the number of items, their total value, the mean over priced items (the
+    Returns buckets oldest-first, each with the week label, its start, the
+    number of items, their total value, the mean over priced items (the
     realised expected value of a drop) and the running cumulative total.
     """
+    boundary = boundary or app.config.get('WEEK_BOUNDARY', 'cs2')
+    # Shift time so the chosen week start lands on Monday 00:00; ISO weeks of
+    # the shifted time are then the wanted weeks.
+    shift = (timedelta(days=CS2_RESET_WEEKDAY, hours=CS2_RESET_HOUR_UTC)
+             if boundary == 'cs2' else timedelta(0))
+
     weeks = {}
     for created_at, price in rows:
         stamp = _parse_timestamp(created_at)
         if stamp is None:
             continue
-        iso_year, iso_week, _ = stamp.isocalendar()
+        iso_year, iso_week, _ = (stamp - shift).isocalendar()
         bucket = weeks.setdefault((iso_year, iso_week), {'count': 0, 'prices': []})
         bucket['count'] += 1
         if price is not None:
@@ -478,9 +530,10 @@ def bucket_by_iso_week(rows):
         bucket = weeks[(iso_year, iso_week)]
         total = sum(bucket['prices'])
         running_total += total
+        start = datetime.fromisocalendar(iso_year, iso_week, 1) + shift
         history.append({
             'week': f'{iso_year}-W{iso_week:02d}',
-            'week_start': datetime.fromisocalendar(iso_year, iso_week, 1).date().isoformat(),
+            'week_start': start.strftime('%Y-%m-%d %H:%M UTC') if shift else start.date().isoformat(),
             'item_count': bucket['count'],
             # Mean over *priced* items only, which is what you want for an EV
             # figure (unpriced items would drag it towards zero).
@@ -491,19 +544,24 @@ def bucket_by_iso_week(rows):
     return history
 
 
+def bucket_by_iso_week(rows):
+    """bucket_by_week with ISO (Monday) weeks."""
+    return bucket_by_week(rows, boundary='iso')
+
+
 def get_journal_history(user_id):
     """Aggregate a user's journal into a per-week drop history.
 
     CS2 grants one care package per week, so the natural unit for "how am I
-    doing over time" is the ISO week the item was journalled in. See
-    bucket_by_iso_week for the bucket fields.
+    doing over time" is the drop week the item was journalled in (see
+    WEEK_BOUNDARY). See bucket_by_week for the bucket fields.
     """
     conn = get_db()
     rows = conn.execute(
         "SELECT created_at, item_price FROM user_journals WHERE user_id = ?",
         (user_id,)
     ).fetchall()
-    return bucket_by_iso_week((row['created_at'], row['item_price']) for row in rows)
+    return bucket_by_week((row['created_at'], row['item_price']) for row in rows)
 
 
 def summarize_history(history):
@@ -1220,9 +1278,13 @@ def login():
     
     return render_template('login.html')
 
-@app.route('/logout')
+@app.route('/logout', methods=['POST'])
 def logout():
-    """Log out the current user."""
+    """Log out the current user.
+
+    POST with the CSRF token only. As a GET link, any page could log a user
+    out with an <img src=".../logout">.
+    """
     session.clear()
     flash('You have been logged out.', 'info')
     return redirect(url_for('index'))
@@ -1260,7 +1322,9 @@ def history():
         user=user,
         history=list(reversed(buckets)),  # table reads newest-first
         summary=summarize_history(buckets),
-        chart=build_history_chart(buckets)
+        chart=build_history_chart(buckets),
+        week_note=(f"Weeks start at the CS2 weekly reset, Wednesday {CS2_RESET_HOUR_UTC:02d}:00 UTC."
+                   if app.config['WEEK_BOUNDARY'] == 'cs2' else "ISO weeks, starting Monday 00:00 UTC.")
     )
 
 
