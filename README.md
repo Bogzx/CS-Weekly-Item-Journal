@@ -80,7 +80,8 @@ The extracted text is processed through a sophisticated matching system that:
 * **Python 3.11, 3.12 or 3.13.** The pipeline needs `ultralytics >= 8.3.94` to
   load the bundled YOLO11 weights, and `numpy >= 1.26` to install at all on
   3.12+.
-* **Node.js 18+** — only for `create_cs_skins.js`, which scrapes the skin list.
+* **Node.js 18+** — only for `create_cs_skins.js`, which scrapes the skin list
+  (`npm install` once to get its parser).
 * A GPU is **not** required. Detection runs on four small crops per screenshot
   and is fast enough on CPU.
 
@@ -118,18 +119,22 @@ one. Everything else has a working default.
 
 ### Build the item database
 
-> **Heads up:** this is the slow part. `create_cs_skins.js` scrapes a wiki and
-> the price steps make tens of thousands of Steam Market requests. Expect
-> hours. See [Owner follow-ups](#-known-gaps) — a prebuilt `csgo_items.db`
-> shipped as a Release asset would remove this step entirely.
+> **Heads up — currently blocked.** `create_cs_skins.js` scrapes the
+> counterstrike.fandom.com skin list, and as of 2026-09-30 the wiki answers it
+> with HTTP 403, so step 2 fails and a new install cannot build the item list.
+> Even when it works, a full price crawl is ~3,500 Steam requests (about 10
+> hours). See [Known gaps](#-known-gaps) — a prebuilt `csgo_items.db` shipped
+> as a Release asset would remove this whole section.
 
 All database scripts live in `Src/DB/`:
 
 ```bash
-# Create the empty schema
+# Create the empty schema. Refuses to touch an existing database; use
+# --force to rebuild only the item tables (accounts and journals are kept).
 python Src/DB/create_database.py
 
 # Generate the CS2 skin list (Node)
+npm install
 node Src/DB/create_cs_skins.js
 
 # Generate the CS2 case list
@@ -138,7 +143,7 @@ python Src/DB/create_cases.py
 # Populate the database from the generated data
 python Src/DB/populate_database.py
 
-# Fetch prices. bulk_scraper pulls 100 items per request -- prefer it.
+# Fetch prices. bulk_scraper pulls a page of items per request -- prefer it.
 python Src/DB/bulk_scraper.py
 
 # Optional: add graffiti
@@ -183,19 +188,30 @@ The system uses a SQLite database with the following key tables:
 
 ## 🔄 Updating Prices
 
-The scheduler runs a daily bulk price update automatically once the app is
-running. To update manually:
+The scheduler runs a daily bulk price update at 00:00 UTC once the app is
+running, using the limits in `price_update_config.json` (default: the first
+5,000 market items by name, ~500 requests, roughly 85 minutes). To update
+manually:
 
 ```bash
-# Bulk update -- 100 items per Steam request. This is the fast path.
+# Bulk update. Steam returns at most 10 items per request and the scraper
+# waits 10 s between pages, so the whole market (~35k items) takes ~10 hours.
 python Src/DB/bulk_scraper.py
 
-# Restrict to specific collections
+# Narrow it down: only cases, or a single search term
+python Src/DB/bulk_scraper.py --type case
+python Src/DB/bulk_scraper.py --query "Revolution Case"
+
+# Only write prices for specific collections (Steam is still crawled in full)
 python Src/DB/bulk_scraper.py --collections "Clutch Case" "Chroma Case"
 
-# Control how many items are fetched per request (default 100)
-python Src/DB/bulk_scraper.py --batch-size 100 --max 5000
+# Cap the number of market items fetched
+python Src/DB/bulk_scraper.py --max 5000
 ```
+
+On HTTP 429 the scraper backs off (60 s, 120 s, honouring `Retry-After`). If
+Steam keeps refusing it stops, keeps the prices it already fetched, and exits
+with status 1 so the scheduled job logs a failure.
 
 `Src/DB/update_price.py` also exists and updates items one at a time. It sleeps
 15 seconds before **every** request, so a full refresh of a 20k-row database
@@ -212,6 +228,10 @@ python Src/DB/verify_database.py
 ```bash
 pip install pytest
 pytest -q
+
+# The Node skin-scraper parser
+npm install
+npm test
 ```
 
 `tests/test_golden_image.py` runs the real detection + OCR pipeline against a
@@ -229,13 +249,22 @@ pytest -q -m "not slow"
 ## 🕳️ Known gaps
 
 * **The YOLO model cannot currently be retrained.** No label files and no
-  `data.yaml` were ever committed, and `my_model/train/args.yaml:4` points at a
-  Google Colab path that no longer exists. `Models/BOX_TRAINED.pt` (mAP50
+  `data.yaml` were ever committed, and the training run's `args.yaml` (removed
+  from the tree, still in git history) points at a Google Colab path that no
+  longer exists. `Models/BOX_TRAINED.pt` (mAP50
   0.995) is therefore irreplaceable. Re-labelling is an owner task — see the
   pull request description for concrete steps.
-* **No prebuilt `csgo_items.db` ships.** Every new user pays hours of scraping.
-  Publishing one as a GitHub Release asset is the single biggest adoption
-  unlock.
+* **No prebuilt `csgo_items.db` ships, and the skin-list source is blocked.**
+  counterstrike.fandom.com returns 403 to `create_cs_skins.js`, so a new user
+  cannot build the item database at all. Publishing a prebuilt database as a
+  GitHub Release asset is the single biggest adoption unlock.
+* **Skin recommendations assume the best wear.** The care-package screen does
+  not show wear, so each skin is offered in all five wears and the
+  recommendation takes the priciest one. It also recommends one item, while
+  the game lets you claim two.
+* **No login rate limiting or CSRF tokens.** Session cookies are
+  `SameSite=Lax`, which blocks cross-site form posts in current browsers, but
+  do not expose the app beyond your own machine or LAN.
 
 ## 🤝 Contributing
 
