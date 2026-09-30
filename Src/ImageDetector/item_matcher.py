@@ -1,6 +1,11 @@
+import os
 import sqlite3
 import re
 from difflib import SequenceMatcher
+
+
+class ItemDatabaseNotReady(RuntimeError):
+    """The database has no items table yet (the item DB was never built)."""
 
 class ItemMatcher:
     def __init__(self, db_path="csgo_items.db"):
@@ -19,8 +24,10 @@ class ItemMatcher:
             "Battle-Scarred"
         ]
         
-        # Cache of all items for faster matching
+        # Cache of all items for faster matching, and the database file
+        # signature it was loaded from (see _db_signature)
         self.items_cache = None
+        self._cache_signature = None
         
         # Pre-compile regex patterns
         self.clean_pattern = re.compile(r'[^\w\s]')
@@ -43,9 +50,28 @@ class ItemMatcher:
         }
         return conn
     
+    def _db_signature(self):
+        """(mtime, size) of the database file and its WAL, or None.
+
+        The cache used to be loaded once per process and never refreshed, so
+        prices written by the daily price job (or a manual bulk_scraper run)
+        never reached the recommendations until the app was restarted.
+        Writes in WAL mode land in the -wal file first, so it counts too.
+        """
+        signature = []
+        for path in (self.db_path, self.db_path + '-wal'):
+            try:
+                stat = os.stat(path)
+            except OSError:
+                signature.append(None)
+            else:
+                signature.append((stat.st_mtime_ns, stat.st_size))
+        return tuple(signature)
+
     def load_items_cache(self):
-        """Load all items from the database into a cache for faster matching."""
-        if self.items_cache is not None:
+        """Load all items into a cache, reloading when the database changed."""
+        signature = self._db_signature()
+        if self.items_cache is not None and signature == self._cache_signature:
             return self.items_cache
             
         conn = self.get_db_connection()
@@ -55,6 +81,11 @@ class ItemMatcher:
             # Fix for KeyError: 1 - access columns by index as they are now dictionaries
             columns_info = cursor.fetchall()
             columns = [col['name'] for col in columns_info]
+            if not columns:
+                raise ItemDatabaseNotReady(
+                    f"{self.db_path} has no item table yet. Build the item database first "
+                    f"(README: 'Build the item database')."
+                )
             
             # Construct query based on available columns
             select_cols = ", ".join(columns)
@@ -62,7 +93,7 @@ class ItemMatcher:
             cursor = conn.execute(f"SELECT {select_cols} FROM items")
             
             # Explicitly convert ALL sqlite3.Row objects to regular dictionaries
-            self.items_cache = []
+            items = []
             for row in cursor.fetchall():
                 # Convert to regular dictionary
                 item = dict(row)
@@ -80,8 +111,12 @@ class ItemMatcher:
                 item['base_name'] = base_name
                 item['base_normalized'] = self.normalize_text(base_name)
                 
-                self.items_cache.append(item)
+                items.append(item)
             
+            # Swap in the complete list at once so a concurrent request never
+            # sees a half-built cache.
+            self.items_cache = items
+            self._cache_signature = signature
             return self.items_cache
         finally:
             conn.close()

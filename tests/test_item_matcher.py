@@ -71,3 +71,35 @@ class TestMatching:
 
     def test_unrelated_text_does_not_match(self, db_matcher):
         assert db_matcher.match_with_confidence('zzzz qqqq')['status'] == 'no_match'
+
+
+class TestCacheRefresh:
+    def test_new_prices_are_picked_up_without_a_restart(self, db_matcher):
+        """The cache used to live for the whole process, so the daily price
+        job's writes never reached the recommendations."""
+        assert db_matcher.match_with_confidence('Revolution Case')['best_match']['price'] is None
+
+        conn = sqlite3.connect(db_matcher.db_path)
+        conn.execute("UPDATE items SET price = 0.55 WHERE name = 'Revolution Case'")
+        conn.commit()
+        conn.close()
+        # Make sure the change is visible even on filesystems with coarse mtimes.
+        import os
+        stat = os.stat(db_matcher.db_path)
+        os.utime(db_matcher.db_path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000_000))
+
+        assert db_matcher.match_with_confidence('Revolution Case')['best_match']['price'] == 0.55
+
+    def test_unchanged_database_is_not_reloaded(self, db_matcher):
+        first = db_matcher.load_items_cache()
+
+        assert db_matcher.load_items_cache() is first
+
+    def test_missing_item_table_gives_a_clear_error(self, tmp_path):
+        from Src.ImageDetector.item_matcher import ItemDatabaseNotReady
+
+        db = str(tmp_path / 'app_only.db')
+        sqlite3.connect(db).execute("CREATE TABLE users (id INTEGER PRIMARY KEY)").connection.close()
+
+        with pytest.raises(ItemDatabaseNotReady, match='Build the item database'):
+            ItemMatcher(db).match_with_confidence('Revolution Case')
