@@ -27,6 +27,11 @@ class TestDecodePastedImage:
 
         assert ext == 'jpg'
 
+    def test_gif_is_stored_as_png_because_opencv_cannot_read_gif(self, appmod):
+        ext, _ = appmod.decode_pasted_image(png_data_url(subtype='gif', fmt='GIF'))
+
+        assert ext == 'png'
+
     def test_bare_base64_defaults_to_png(self, appmod):
         ext, _ = appmod.decode_pasted_image(png_data_url().split(',', 1)[1])
 
@@ -150,7 +155,58 @@ class TestRoutes:
         assert len(seen) == 1
         assert seen[0].endswith('.png')
         assert os.path.dirname(seen[0]) == appmod.app.config['UPLOAD_FOLDER']
-        os.remove(seen[0])
+        # Deleted once processed; nothing displays it afterwards.
+        assert not os.path.exists(seen[0])
+
+    def test_uploaded_file_must_be_an_image(self, appmod, logged_in, monkeypatch):
+        upload_dir = appmod.app.config['UPLOAD_FOLDER']
+        before = set(os.listdir(upload_dir))
+        monkeypatch.setattr(appmod, 'process_image', lambda path: pytest.fail('pipeline reached'))
+
+        resp = logged_in.post('/upload', data={'file': (io.BytesIO(b'<script>x</script>'), 'shot.html')},
+                              content_type='multipart/form-data')
+
+        assert resp.status_code == 400
+        assert b'not a screenshot we can read' in resp.data
+        assert set(os.listdir(upload_dir)) == before
+
+    def test_uploaded_file_name_and_extension_come_from_the_content(self, appmod, logged_in, monkeypatch):
+        seen = []
+        monkeypatch.setattr(appmod, 'process_image', lambda path: seen.append(path) or [])
+        buf = io.BytesIO()
+        Image.new('RGB', (8, 8)).save(buf, format='JPEG')
+        buf.seek(0)
+
+        resp = logged_in.post('/upload', data={'file': (buf, '../../evil.png.exe')},
+                              content_type='multipart/form-data')
+
+        assert resp.status_code == 200
+        assert os.path.basename(seen[0]).endswith('.jpg')
+        assert 'evil' not in seen[0]
+
+    def test_gif_upload_is_converted_for_opencv(self, appmod, logged_in, monkeypatch):
+        formats = []
+
+        def fake_process(path):
+            with Image.open(path) as img:
+                formats.append((os.path.splitext(path)[1], img.format))
+            return []
+
+        monkeypatch.setattr(appmod, 'process_image', fake_process)
+        buf = io.BytesIO()
+        Image.new('P', (8, 8)).save(buf, format='GIF')
+        buf.seek(0)
+
+        logged_in.post('/upload', data={'file': (buf, 'shot.gif')}, content_type='multipart/form-data')
+
+        assert formats == [('.png', 'PNG')]
+
+    def test_missing_image_is_a_readable_page_not_json(self, logged_in):
+        resp = logged_in.post('/upload', data={})
+
+        assert resp.status_code == 400
+        assert resp.mimetype == 'text/html'
+        assert b'No file or pasted image was received' in resp.data
 
 
 class TestLoginErrors:
