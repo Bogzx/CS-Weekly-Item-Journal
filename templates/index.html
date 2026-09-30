@@ -187,6 +187,13 @@
             font-style: italic;
             color: #666;
         }
+        .logout-form {
+            display: inline;
+            margin: 0;
+        }
+        .logout-form .btn {
+            font-family: inherit;
+        }
     </style>
 </head>
 <body>
@@ -198,7 +205,10 @@
                     <span>Welcome, {{ user.username }}!</span>
                     <a href="{{ url_for('history') }}" class="btn btn-outline">History</a>
                     <a href="{{ url_for('profile') }}" class="btn btn-outline">Profile</a>
-                    <a href="{{ url_for('logout') }}" class="btn">Logout</a>
+                    <form method="post" action="{{ url_for('logout') }}" class="logout-form">
+                        {{ csrf_field() }}
+                        <button type="submit" class="btn">Logout</button>
+                    </form>
                 {% else %}
                     <div class="auth-buttons">
                         <a href="{{ url_for('login') }}" class="btn btn-outline">Login</a>

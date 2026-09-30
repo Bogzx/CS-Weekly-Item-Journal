@@ -95,7 +95,65 @@ class TestLoginRoute:
             client.post('/login', data={'username': name, 'password': 'wrong'})
 
         assert client.post('/login', data={'username': name, 'password': 'pw-123456'}).status_code == 302
-        client.get('/logout')
+        client.post('/logout', data={})
         resp = client.post('/login', data={'username': name, 'password': 'wrong'})
 
         assert resp.status_code == 200  # counting starts again from zero
+
+
+class TestLogout:
+    def test_logout_is_post_only(self, logged_in):
+        assert logged_in.get('/logout').status_code == 405
+        with logged_in.session_transaction() as sess:
+            assert 'user_id' in sess
+
+    def test_logout_needs_the_csrf_token(self, logged_in):
+        assert logged_in.post('/logout', data={}, csrf=False).status_code == 400
+        with logged_in.session_transaction() as sess:
+            assert 'user_id' in sess
+
+    def test_logout_with_token(self, logged_in):
+        assert logged_in.post('/logout', data={}).status_code == 302
+        with logged_in.session_transaction() as sess:
+            assert 'user_id' not in sess
+
+    def test_pages_offer_a_logout_form_not_a_link(self, logged_in):
+        html = logged_in.get('/').get_data(as_text=True)
+
+        assert 'class="logout-form"' in html
+        assert 'href="/logout"' not in html
+
+
+class TestTrustedProxies:
+    def fail_logins(self, client, name, ip, times):
+        for _ in range(times):
+            client.post('/login', data={'username': name, 'password': 'wrong'},
+                        headers={'X-Forwarded-For': ip})
+
+    def test_forwarded_for_is_ignored_by_default(self, appmod, client):
+        """Without a trusted proxy, rotating X-Forwarded-For must not dodge the throttle."""
+        name = f'user_{uuid.uuid4().hex[:8]}'
+        register(client, name)
+        for i in range(appmod.login_throttle.max_failures):
+            self.fail_logins(client, name, f'10.0.0.{i}', 1)
+
+        resp = client.post('/login', data={'username': name, 'password': 'wrong'},
+                           headers={'X-Forwarded-For': '10.0.0.99'})
+
+        assert resp.status_code == 429
+
+    def test_trusted_proxy_throttles_the_real_client(self, appmod, client):
+        name = f'user_{uuid.uuid4().hex[:8]}'
+        register(client, name)
+        appmod.trust_proxies(1)
+        try:
+            self.fail_logins(client, name, '203.0.113.7', appmod.login_throttle.max_failures)
+            locked = client.post('/login', data={'username': name, 'password': 'wrong'},
+                                 headers={'X-Forwarded-For': '203.0.113.7'})
+            other = client.post('/login', data={'username': name, 'password': 'wrong'},
+                                headers={'X-Forwarded-For': '198.51.100.2'})
+        finally:
+            appmod.trust_proxies(0)
+
+        assert locked.status_code == 429
+        assert other.status_code == 200

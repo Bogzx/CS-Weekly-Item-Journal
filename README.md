@@ -184,7 +184,7 @@ The system uses a SQLite database with the following key tables:
 3. **Review Results** : The system identifies items and displays matching candidates with price information
 4. **Select Items** : The two most valuable items are marked Pick 1 / Pick 2 and pre-selected (see [How items are valued](#-how-items-are-valued))
 5. **Add to Journal** : Confirm the correct items to add to your personal journal
-6. **Track Value** : Watch total value and per-drop expected value on the **History** page
+6. **Track Value** : Watch total value and per-drop expected value on the **History** page. Weeks run from one CS2 weekly reset to the next (Wednesday 01:00 UTC; `WEEK_BOUNDARY=iso` for Monday-based ISO weeks)
 
 ## 💲 How items are valued
 
@@ -299,9 +299,8 @@ pytest -q -m "not slow"
 * **Built for your own machine or LAN.** Logins are throttled per client IP
   (in memory) and every form POST carries a CSRF token, but there is no
   HTTPS, no password reset and no account deletion. Put it behind a TLS proxy
-  (and set `SESSION_COOKIE_SECURE=True`) before exposing it more widely; note
-  that the login throttle then sees the proxy's address unless you add
-  Werkzeug's `ProxyFix`.
+  (and set `SESSION_COOKIE_SECURE=True`, and `TRUSTED_PROXIES=1` so the
+  login throttle sees real client addresses) before exposing it more widely.
 
 ## 🤝 Contributing
 

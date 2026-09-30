@@ -176,6 +176,13 @@
             color: #6c757d;
             margin-top: 3px;
         }
+        .logout-form {
+            display: inline;
+            margin: 0;
+        }
+        .logout-form .btn {
+            font-family: inherit;
+        }
     </style>
 </head>
 <body>
@@ -185,7 +192,10 @@
             <div>
                 <a href="{{ url_for('index') }}" class="btn btn-outline">Home</a>
                 <a href="{{ url_for('history') }}" class="btn btn-outline">History</a>
-                <a href="{{ url_for('logout') }}" class="btn">Logout</a>
+                <form method="post" action="{{ url_for('logout') }}" class="logout-form">
+                    {{ csrf_field() }}
+                    <button type="submit" class="btn">Logout</button>
+                </form>
             </div>
         </header>
         

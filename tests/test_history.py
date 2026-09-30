@@ -1,5 +1,7 @@
 """Tests for the drop-history aggregation and its chart geometry."""
 
+import pytest
+
 
 def bucket(week, items, total, cumulative, avg=None):
     return {
@@ -150,7 +152,7 @@ class TestIsoWeekBuckets:
     def test_unparseable_timestamps_are_skipped(self, appmod):
         assert appmod.bucket_by_iso_week([('garbage', 1.0)]) == []
 
-    def test_route_renders_iso_weeks(self, appmod, logged_in):
+    def test_route_renders_drop_weeks(self, appmod, logged_in):
         with logged_in.session_transaction() as sess:
             user_id = sess['user_id']
         with appmod.app.app_context():
@@ -162,5 +164,41 @@ class TestIsoWeekBuckets:
 
         html = logged_in.get('/history').get_data(as_text=True)
 
+        # Thu 2026-01-01 is in the drop week that began Wed 2025-12-31 01:00.
         assert '2026-W01' in html
+        assert '2025-12-31 01:00 UTC' in html
+        assert 'Weeks start at the CS2 weekly reset' in html
         assert 'W00' not in html
+
+
+class TestCs2DropWeeks:
+    def test_reset_is_wednesday_0100_utc(self, appmod):
+        history = appmod.bucket_by_week([
+            ('2026-09-30 00:30:00', 1.0),   # Wednesday, before the reset
+            ('2026-09-30 01:30:00', 2.0),   # Wednesday, after it
+        ], boundary='cs2')
+
+        assert [(b['week'], b['week_start'], b['total_value']) for b in history] == [
+            ('2026-W39', '2026-09-23 01:00 UTC', 1.0),
+            ('2026-W40', '2026-09-30 01:00 UTC', 2.0),
+        ]
+
+    def test_monday_and_tuesday_belong_to_the_previous_drop_week(self, appmod):
+        """ISO weeks split one drop week (Wed-Tue) across two buckets."""
+        rows = [('2026-09-23 12:00:00', 1.0), ('2026-09-28 12:00:00', 1.0), ('2026-09-29 23:00:00', 1.0)]
+
+        assert len(appmod.bucket_by_week(rows, boundary='cs2')) == 1
+        assert len(appmod.bucket_by_week(rows, boundary='iso')) == 2
+
+    def test_iso_fallback(self, appmod):
+        history = appmod.bucket_by_week([('2026-09-30 00:30:00', 1.0)], boundary='iso')
+
+        assert history[0]['week'] == '2026-W40'
+        assert history[0]['week_start'] == '2026-09-28'
+
+    @pytest.mark.parametrize('raw,expected', [(None, 'cs2'), ('ISO', 'iso'), ('bogus', 'cs2')])
+    def test_resolve(self, appmod, raw, expected):
+        assert appmod.resolve_week_boundary(raw) == expected
+
+    def test_default_is_cs2(self, appmod):
+        assert appmod.app.config['WEEK_BOUNDARY'] == 'cs2'
