@@ -1,0 +1,396 @@
+{
+ "_about": "Hand-labelled contents of every screenshot in Training_Images/, left to right, labelled 2026-09-30 by reading each image (zoomed where small). `name` is the Steam market name. `shown` is present when the screen displays something else (non-English client); such slots are not scored against English OCR. `certain: false` marks a label that is a translation guess. `in_item_db: false` marks items fetch_item_lists.py does not put in the database. Images with `scored: false` or `duplicate_of` are skipped by tools/ocr_accuracy.py. Every name was checked against ByMykel/CSGO-API.",
+ "images": {
+  "3051505611_preview_Без имени-4.png": {
+   "slots": [
+    {
+     "name": "Recoil Case"
+    },
+    {
+     "name": "Nova | Predator"
+    },
+    {
+     "name": "MP5-SD | Dirt Drop"
+    },
+    {
+     "name": "Sealed Graffiti | QQ (Violent Violet)"
+    }
+   ]
+  },
+  "F7EIUH3asAAQgXl.jpg": {
+   "slots": [
+    {
+     "name": "Snakebite Case"
+    },
+    {
+     "name": "Nova | Sand Dune"
+    },
+    {
+     "name": "G3SG1 | Desert Storm"
+    },
+    {
+     "name": "Sealed Graffiti | Noscope (Cash Green)"
+    }
+   ]
+  },
+  "GZdDwl9XwAAVn_R.png": {
+   "slots": [
+    {
+     "name": "Revolution Case"
+    },
+    {
+     "name": "MP9 | Slide"
+    },
+    {
+     "name": "Charm Detachment Pack",
+     "in_item_db": false
+    },
+    {
+     "name": "Sealed Graffiti | GLHF (Jungle Green)"
+    }
+   ]
+  },
+  "Select-Weekly-Drop-Rewards-in-CS2.webp": {
+   "slots": [
+    {
+     "name": "Revolution Case"
+    },
+    {
+     "name": "P90 | Sand Spray"
+    },
+    {
+     "name": "Tec-9 | Groundwater"
+    },
+    {
+     "name": "Sealed Graffiti | Chess King (Jungle Green)"
+    }
+   ],
+   "notes": "small (750 px wide)"
+  },
+  "TEST FINAL.png": {
+   "scored": false,
+   "notes": "German client, photo of a monitor at a steep angle",
+   "slots": [
+    {
+     "name": "Sticker Capsule 2",
+     "shown": "Aufkleberkapsel 2",
+     "in_item_db": false
+    },
+    {
+     "name": "MP7 | Fade",
+     "shown": "MP7 | Farbverlauf",
+     "certain": false
+    },
+    {
+     "name": "Sealed Graffiti | Heart (Dust Brown)",
+     "shown": "Versiegeltes Graffito | Heart (Staubbraun)"
+    },
+    {
+     "name": "Sealed Graffiti | Toasted (Monster Purple)",
+     "shown": "Versiegeltes Graffito | Toasted (Monsterviolett)"
+    }
+   ]
+  },
+  "blog39photo2.jpg": {
+   "slots": [
+    {
+     "name": "Recoil Case"
+    },
+    {
+     "name": "XM1014 | Blue Spruce"
+    },
+    {
+     "name": "Nova | Mandrel"
+    },
+    {
+     "name": "Sealed Graffiti | QQ (Violent Violet)"
+    }
+   ]
+  },
+  "cs2-drop-system-possibly-broken-3-restricted-skins-in-a-row-v0-vaw9d8fy0uec1.webp": {
+   "notes": "Finnish client; only the weapon skin is shown in English",
+   "slots": [
+    {
+     "name": "Dreams & Nightmares Case",
+     "shown": "Unelmia ja painajaisia -aselaatikko"
+    },
+    {
+     "name": "M4A1-S | Nitro"
+    },
+    {
+     "name": "Sealed Graffiti | Sorry (Blood Red)",
+     "shown": "Sinetöity graffiti | Sori (Verenpunainen)"
+    },
+    {
+     "name": "Sealed Graffiti | Tombstone (Tracer Yellow)",
+     "shown": "Sinetöity graffiti | Hautakivi (Valojuovan keltainen)",
+     "certain": false
+    }
+   ]
+  },
+  "cs2-new-drops-system-v0-ithfcqpz7vqb1.webp": {
+   "slots": [
+    {
+     "name": "Fracture Case"
+    },
+    {
+     "name": "SCAR-20 | Contractor"
+    },
+    {
+     "name": "Sealed Graffiti | Bling (Monster Purple)"
+    },
+    {
+     "name": "Sealed Graffiti | 8-Ball (Frog Green)"
+    }
+   ]
+  },
+  "finally-a-good-weekly-drop-v0-4j7ky9psl3xd1.webp": {
+   "notes": "photo of a monitor",
+   "slots": [
+    {
+     "name": "CS:GO Weapon Case"
+    },
+    {
+     "name": "XM1014 | CaliCamo"
+    },
+    {
+     "name": "Charm Detachment Pack",
+     "in_item_db": false
+    },
+    {
+     "name": "Sealed Graffiti | 8-Ball (Desert Amber)"
+    }
+   ]
+  },
+  "high_res_output.jpg": {
+   "scored": false,
+   "slots": null,
+   "notes": "not a care-package screenshot: a photo of Google image results (the tiny thumbnails are unreadable). The pipeline should find no panel or produce nothing matchable."
+  },
+  "hq720.jpg": {
+   "slots": [
+    {
+     "name": "Fracture Case"
+    },
+    {
+     "name": "SG 553 | Waves Perforated"
+    },
+    {
+     "name": "Charm Detachment Pack",
+     "in_item_db": false
+    },
+    {
+     "name": "Sealed Graffiti | Keep the Change (Jungle Green)"
+    }
+   ],
+   "notes": "small (686 px wide)"
+  },
+  "image.png": {
+   "slots": [
+    {
+     "name": "Revolution Case"
+    },
+    {
+     "name": "Sawed-Off | Forest DDPAT"
+    },
+    {
+     "name": "Sealed Graffiti | Sorry (Bazooka Pink)"
+    },
+    {
+     "name": "Sealed Graffiti | Speechless (Princess Pink)"
+    }
+   ],
+   "notes": "golden-test fixture"
+  },
+  "image2.png": {
+   "slots": [
+    {
+     "name": "Revolution Case"
+    },
+    {
+     "name": "Sawed-Off | Forest DDPAT"
+    },
+    {
+     "name": "Sealed Graffiti | Sorry (Bazooka Pink)"
+    },
+    {
+     "name": "Sealed Graffiti | Speechless (Princess Pink)"
+    }
+   ],
+   "notes": "same drop as image.png, cropped"
+  },
+  "image3.png": {
+   "slots": [
+    {
+     "name": "Revolution Case"
+    },
+    {
+     "name": "Negev | Bulkhead"
+    },
+    {
+     "name": "Sealed Graffiti | Chess King (Brick Red)"
+    },
+    {
+     "name": "Sealed Graffiti | Eye Spy (Princess Pink)"
+    }
+   ]
+  },
+  "maxres2.jpg": {
+   "slots": [
+    {
+     "name": "Recoil Case"
+    },
+    {
+     "name": "MP9 | Sand Dashed"
+    },
+    {
+     "name": "PP-Bizon | Sand Dashed"
+    },
+    {
+     "name": "Sealed Graffiti | 8-Ball (Frog Green)"
+    }
+   ],
+   "notes": "portrait video frame; panel is ~370 px wide"
+  },
+  "maxresdefault.jpg": {
+   "slots": [
+    {
+     "name": "Dreams & Nightmares Case"
+    },
+    {
+     "name": "Five-SeveN | Coolant"
+    },
+    {
+     "name": "G3SG1 | Desert Storm"
+    },
+    {
+     "name": "Sealed Graffiti | Ninja (Battle Green)"
+    }
+   ]
+  },
+  "n51265 (1).jpeg": {
+   "slots": [
+    {
+     "name": "Revolution Case"
+    },
+    {
+     "name": "XM1014 | Blue Steel"
+    },
+    {
+     "name": "Sealed Graffiti | Cocky (Princess Pink)"
+    },
+    {
+     "name": "Sealed Graffiti | Loser (Violent Violet)"
+    }
+   ],
+   "notes": "rewards already claimed: dimmed, low-contrast text"
+  },
+  "pic-20230927-885x213-1799455449.png": {
+   "slots": [
+    {
+     "name": "Dreams & Nightmares Case"
+    },
+    {
+     "name": "Nova | Sand Dune"
+    },
+    {
+     "name": "XM1014 | Blue Steel"
+    },
+    {
+     "name": "Sealed Graffiti | Rage Mode (Violent Violet)"
+    }
+   ]
+  },
+  "pythjonm.jpeg": {
+   "duplicate_of": "n51265 (1).jpeg"
+  },
+  "test.webp": {
+   "slots": [
+    {
+     "name": "Snakebite Case"
+    },
+    {
+     "name": "PP-Bizon | Facility Sketch"
+    },
+    {
+     "name": "Sealed Graffiti | Karambit (Monster Purple)"
+    },
+    {
+     "name": "Sealed Graffiti | Tilt (War Pig Pink)"
+    }
+   ]
+  },
+  "tvc41q6ua4sb1.webp": {
+   "slots": [
+    {
+     "name": "CS:GO Weapon Case"
+    },
+    {
+     "name": "Dual Berettas | Contractor"
+    },
+    {
+     "name": "AUG | Condemned"
+    },
+    {
+     "name": "Sealed Graffiti | Quickdraw (Jungle Green)"
+    }
+   ]
+  },
+  "weekly-drop-v0-vng9r4y8lymc1.webp": {
+   "scored": false,
+   "notes": "German client, photo of a monitor, panel cut off at the left edge",
+   "slots": [
+    {
+     "name": "Operation Hydra Case",
+     "shown": "Waffenkiste „Operation Hydra“"
+    },
+    {
+     "name": "AUG | Sweeper",
+     "shown": "AUG | Kehrmaschine",
+     "certain": false
+    },
+    {
+     "name": "P90 | Sand Spray",
+     "shown": "P90 | Sandspray"
+    },
+    {
+     "name": "Sealed Graffiti | Jump Shot (Frog Green)",
+     "shown": "Versiegeltes Graffito | Jump Shot (Froschgrün)"
+    }
+   ]
+  },
+  "what-are-the-odds-of-getting-a-9-skin-in-a-weekley-drop-fn-v0-va67pkamsric1.webp": {
+   "slots": [
+    {
+     "name": "Recoil Case"
+    },
+    {
+     "name": "P2000 | Amber Fade"
+    },
+    {
+     "name": "Sealed Graffiti | Jump Shot (Tiger Orange)"
+    },
+    {
+     "name": "Sealed Graffiti | Eco (SWAT Blue)"
+    }
+   ]
+  },
+  "wow-i-got-a-blue-from-the-weekly-drop-v0-iscppqbfxdyb1.webp": {
+   "slots": [
+    {
+     "name": "Operation Bravo Case"
+    },
+    {
+     "name": "Desert Eagle | Urban Rubble"
+    },
+    {
+     "name": "Sealed Graffiti | Tombstone (Blood Red)"
+    },
+    {
+     "name": "Sealed Graffiti | X-Axes (Blood Red)"
+    }
+   ],
+   "notes": "small (640 px wide)"
+  }
+ }
+}
