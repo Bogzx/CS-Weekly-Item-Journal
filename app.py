@@ -791,7 +791,7 @@ def match_items_in_database(item_names):
     """Match detected item names to the database using the ItemMatcher."""
     results = []
     
-    for i, name in enumerate(item_names):
+    for name in item_names:
         cleaned_name = clean_item_name(name)
         if not cleaned_name:
             results.append({
@@ -815,8 +815,11 @@ def match_items_in_database(item_names):
             })
             continue
         
-        # Use the ItemMatcher to match the item with confidence
-        match_result = matcher.match_with_confidence(cleaned_name, threshold=0.4)
+        # Use the ItemMatcher to match the item with confidence. The item
+        # type is read from the text itself; this used to assume the first of
+        # the four slots is always a case and searched only cases there.
+        item_type = matcher.detect_item_type(cleaned_name)
+        match_result = matcher.match_with_confidence(cleaned_name, item_type=item_type)
         
         if match_result['status'] == 'matched':
             # Convert the matches to the expected format
@@ -835,49 +838,24 @@ def match_items_in_database(item_names):
                 'confidence': match_result['confidence']
             }
             
-            # First item (index 0) should only show case type items
-            if i == 0:
-                # Filter to only include case type items
-                case_matches = []
-                
-                # Add the best match if it's a case
-                if best_match.get('item_type') == 'case':
-                    case_matches.append(best_match_entry)
-                
-                # Look for case items in other matches, but avoid duplicates
-                seen_ids = {best_match.get('id')} if best_match.get('id') else set()
-                
-                for match_data in match_result['matches']:
+            # Cases: the best match plus the other candidate cases
+            if best_match.get('item_type') == 'case':
+                match_list = [best_match_entry]
+                for match_data in match_result['matches'][1:]:
                     match_item = ensure_dict(match_data.get('item', {}))
-                    item_id = match_item.get('id')
-                    
-                    # Skip if we've already added this item or if it's not a case
-                    if item_id in seen_ids or match_item.get('item_type') != 'case':
+                    if match_item.get('item_type') != 'case':
                         continue
-                        
-                    seen_ids.add(item_id)
                     score = match_data.get('score', 0)
-                    
-                    # Determine confidence level based on score
-                    confidence = 'low'
-                    if score > 0.85:
-                        confidence = 'high'
-                    elif score > 0.65:
-                        confidence = 'medium'
-                    
-                    case_matches.append({
-                        'id': item_id,
+                    match_list.append({
+                        'id': match_item.get('id'),
                         'name': match_item.get('name', 'Unknown Item'),
                         'collection': match_item.get('collection', ''),
                         'price': match_item.get('price'),
                         'price_type': match_item.get('price_type', 'unknown'),
                         'item_type': match_item.get('item_type', ''),
                         'score': score,
-                        'confidence': confidence
+                        'confidence': matcher.confidence_label(score)
                     })
-                
-                # Use case matches instead of all matches
-                match_list = case_matches
             
             # For graffiti items, only show the best match -- unless the OCR
             # text lost the colour in brackets (the crop usually cuts it off),
@@ -922,12 +900,7 @@ def match_items_in_database(item_names):
                     match_item = ensure_dict(match_data.get('item', {}))
                     score = match_data.get('score', 0)
                     
-                    # Determine confidence level based on score
-                    confidence = 'low'
-                    if score > 0.85:
-                        confidence = 'high'
-                    elif score > 0.65:
-                        confidence = 'medium'
+                    confidence = matcher.confidence_label(score)
                     
                     match_list.append({
                         'id': match_item.get('id'),
@@ -1048,7 +1021,9 @@ def annotate_recommendation(item_results, rule=None, picks=RECOMMENDED_PICKS):
     `priced_variants`, `variant_count`, `variant_kind` and `display_name`;
     on every match:
     `price_value`. Recommended slots and their `value_match` also get
-    `recommended = True`, and slots get `pick_rank` (1-based).
+    `recommended = True`, and slots get `pick_rank` (1-based). A slot whose
+    top match has 'low' confidence is valued but marked `uncertain` and never
+    recommended.
 
     Returns the recommended slots, best first ([] when nothing has a price --
     the common state of a freshly built database).
@@ -1087,6 +1062,11 @@ def annotate_recommendation(item_results, rule=None, picks=RECOMMENDED_PICKS):
         result['value'] = chosen['price_value']
         result['price_min'] = priced[0]['price_value']
         result['price_max'] = priced[-1]['price_value']
+        # A low-confidence top match was the right item only half the time on
+        # the labelled screenshots, so it is valued but never recommended.
+        if matches[0].get('confidence') == 'low':
+            result['uncertain'] = True
+            continue
         valued.append(result)
 
     # sorted() is stable, so equal values keep their on-screen order.

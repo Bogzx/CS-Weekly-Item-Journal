@@ -200,6 +200,18 @@ class TestRecommendedPicks:
 
         assert highest == [results[1], results[0]]
 
+    def test_low_confidence_slot_is_valued_but_never_picked(self, appmod):
+        """Low-confidence top matches were right only 5 times in 10 on the
+        labelled screenshots."""
+        shaky = slot(match('Item X', 50.0, score=0.45, confidence='low'))
+        results = [priced(1.00), shaky, priced(0.50)]
+
+        recommended = appmod.annotate_recommendation(results)
+
+        assert recommended == [results[0], results[2]]
+        assert results[1]['value'] == 50.0
+        assert results[1]['uncertain'] is True
+
     def test_ties_keep_screen_order(self, appmod):
         results = [priced(1.00), priced(1.00), priced(1.00)]
 
@@ -314,3 +326,10 @@ class TestGraffitiMatching:
         assert results[1]['matches'] == []
         appmod.annotate_recommendation(results)
         assert results[1]['value'] is None
+
+    def test_slot_order_does_not_decide_the_item_type(self, appmod, graffiti_matcher):
+        """Slot 0 used to be searched for cases only, whatever it said."""
+        results = appmod.match_items_in_database(['Sealed Graffiti | Sorry (Tiger Orange)', 'Revolution Case'])
+
+        assert [m['name'] for m in results[0]['matches']] == ['Sealed Graffiti | Sorry (Tiger Orange)']
+        assert results[1]['matches'][0]['name'] == 'Revolution Case'

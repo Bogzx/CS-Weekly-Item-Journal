@@ -367,6 +367,9 @@
                             {% endif %}
                         </p>
                         {% endif %}
+                        {% if result.uncertain %}
+                        <p class="score">Uncertain match: check the name before relying on this value. Not ranked as a pick.</p>
+                        {% endif %}
                         {% if result.status == 'found' %}
                             {% if result.matches %}
                                 {% for match in result.matches %}
