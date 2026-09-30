@@ -212,6 +212,29 @@ class TestRecommendedPicks:
         assert results[1]['value'] == 50.0
         assert results[1]['uncertain'] is True
 
+    def test_non_tradable_slot_is_never_picked(self, appmod):
+        charm = slot(dict(match('Charm Detachment Pack', 0.0), tradable=False))
+        results = [charm, priced(0.03), priced(None)]
+
+        recommended = appmod.annotate_recommendation(results)
+
+        assert recommended == [results[1]]           # not the $0 tool, even as pick 2
+        assert results[0]['not_tradable'] is True
+        assert results[0]['value'] == 0.0
+        assert not results[0].get('recommended')
+
+    def test_non_tradable_is_not_picked_even_when_nothing_else_is_priced(self, appmod):
+        charm = slot(dict(match('Charm Detachment Pack', 0.0), tradable=False))
+
+        assert appmod.annotate_recommendation([charm, priced(None)]) == []
+
+    def test_candidates_default_to_tradable(self, appmod):
+        """Rows from a database built before the tradable column existed."""
+        entry = appmod.candidate_entry({'id': 1, 'name': 'Revolution Case'}, 1.0, 'high')
+
+        assert entry['tradable'] is True
+        assert appmod.candidate_entry({'tradable': 0}, 1.0, 'high')['tradable'] is False
+
     def test_ties_keep_screen_order(self, appmod):
         results = [priced(1.00), priced(1.00), priced(1.00)]
 
@@ -333,3 +356,51 @@ class TestGraffitiMatching:
 
         assert [m['name'] for m in results[0]['matches']] == ['Sealed Graffiti | Sorry (Tiger Orange)']
         assert results[1]['matches'][0]['name'] == 'Revolution Case'
+
+
+def test_results_page_shows_not_tradable(appmod, logged_in, monkeypatch):
+    import io
+
+    from PIL import Image
+
+    results = [
+        priced(0.55),
+        slot(dict(match('Charm Detachment Pack', 0.0), tradable=False)),
+        priced(0.04),
+        priced(0.02),
+    ]
+    monkeypatch.setattr(appmod, 'process_image', lambda path: ['a', 'b', 'c', 'd'])
+    monkeypatch.setattr(appmod, 'match_items_in_database', lambda names: results)
+    buf = io.BytesIO()
+    Image.new('RGB', (4, 4)).save(buf, format='PNG')
+    buf.seek(0)
+
+    html = logged_in.post('/upload', data={'file': (buf, 'shot.png')},
+                          content_type='multipart/form-data').get_data(as_text=True)
+
+    assert 'Not tradable — $0' in html
+    assert [r.get('pick_rank') for r in results] == [1, None, 2, None]
+
+
+def test_charm_pack_flows_from_the_database_to_not_tradable(appmod, tmp_path, monkeypatch):
+    import sqlite3
+
+    from Src.DB import create_database, populate_database
+    from Src.ImageDetector.item_matcher import ItemMatcher
+
+    db = str(tmp_path / 'items.db')
+    create_database.create_csgo_database(db)
+    conn = sqlite3.connect(db)
+    populate_database.populate_cases(conn, [{'Case': 'Revolution Case', 'Steam Market API URL': 'x'}])
+    populate_database.populate_tools(conn, [{'Name': 'Charm Detachment Pack', 'Tradable': '0'}])
+    conn.execute("UPDATE items SET price = 0.55 WHERE name = 'Revolution Case'")
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(appmod, 'matcher', ItemMatcher(db))
+
+    results = appmod.match_items_in_database(['Revolution Case', 'Charm Detachment Pack'])
+    recommended = appmod.annotate_recommendation(results)
+
+    assert results[1]['matches'][0]['tradable'] is False
+    assert results[1]['not_tradable'] is True
+    assert recommended == [results[0]]

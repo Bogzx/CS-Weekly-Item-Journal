@@ -64,6 +64,7 @@ def create_csgo_database(db_path="csgo_items.db", force=False):
         price_type TEXT,
         last_updated TIMESTAMP,
         item_type TEXT,
+        tradable INTEGER NOT NULL DEFAULT 1,
         UNIQUE(name, collection)
     )
     ''')
@@ -126,7 +127,8 @@ optimal performance.
    - market_api_url: Steam Market API URL for price information
    - price: Current price (may be NULL)
    - last_updated: Timestamp of last price update
-   - item_type: Type of item ('skin' or 'case')
+   - item_type: Type of item ('skin', 'case', 'graffiti' or 'tool')
+   - tradable: 0 for items that cannot be sold (e.g. Charm Detachment Pack)
 
 2. collections - Stores collection names for easier filtering
    - id: Unique identifier

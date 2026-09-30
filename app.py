@@ -305,6 +305,14 @@ def initialize_database():
         # Column already exists, which is fine
         pass
     
+    # tradable = 0 marks items that cannot be sold (Charm Detachment Pack)
+    try:
+        cursor.execute("ALTER TABLE items ADD COLUMN tradable INTEGER NOT NULL DEFAULT 1")
+        print("Added tradable column to items table")
+    except sqlite3.OperationalError:
+        # Column already exists (or no item table yet), which is fine
+        pass
+    
     # Create users table if it doesn't exist
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS users (
@@ -841,6 +849,23 @@ def closest_graffiti_colour(ocr_colour, variations):
     return best if best_ratio >= 0.6 else None
 
 
+def candidate_entry(item, score, confidence):
+    """One candidate for the results page, from an item row."""
+    tradable = item.get('tradable')
+    return {
+        'id': item.get('id'),
+        'name': item.get('name', 'Unknown Item'),
+        'collection': item.get('collection', ''),
+        'price': item.get('price'),
+        'price_type': item.get('price_type', 'unknown'),
+        'item_type': item.get('item_type', ''),
+        # Databases built before the column existed count as tradable.
+        'tradable': tradable is None or bool(tradable),
+        'score': score,
+        'confidence': confidence,
+    }
+
+
 # Normalised OCR texts that name only an item type, not an item.
 TYPE_ONLY_TEXTS = {'sealed graffiti', 'graffiti', 'sealed', ''}
 
@@ -880,46 +905,27 @@ def match_items_in_database(item_names):
         match_result = matcher.match_with_confidence(cleaned_name, item_type=item_type)
         
         if match_result['status'] == 'matched':
-            # Convert the matches to the expected format
-            match_list = []
-            
-            # First get the best match
             best_match = ensure_dict(match_result['best_match'])
-            best_match_entry = {
-                'id': best_match.get('id'),
-                'name': best_match.get('name', 'Unknown Item'),
-                'collection': best_match.get('collection', ''),
-                'price': best_match.get('price'),
-                'price_type': best_match.get('price_type', 'unknown'),
-                'item_type': best_match.get('item_type', ''),
-                'score': match_result['score'],
-                'confidence': match_result['confidence']
-            }
+            best_match_entry = candidate_entry(best_match, match_result['score'],
+                                               match_result['confidence'])
+            best_type = best_match.get('item_type')
             
-            # Cases: the best match plus the other candidate cases
-            if best_match.get('item_type') == 'case':
+            # Cases (and capsules) and non-tradable tools: the best match plus
+            # the other candidates of the same type
+            if best_type in ('case', 'tool'):
                 match_list = [best_match_entry]
                 for match_data in match_result['matches'][1:]:
                     match_item = ensure_dict(match_data.get('item', {}))
-                    if match_item.get('item_type') != 'case':
+                    if match_item.get('item_type') != best_type:
                         continue
                     score = match_data.get('score', 0)
-                    match_list.append({
-                        'id': match_item.get('id'),
-                        'name': match_item.get('name', 'Unknown Item'),
-                        'collection': match_item.get('collection', ''),
-                        'price': match_item.get('price'),
-                        'price_type': match_item.get('price_type', 'unknown'),
-                        'item_type': match_item.get('item_type', ''),
-                        'score': score,
-                        'confidence': matcher.confidence_label(score)
-                    })
+                    match_list.append(candidate_entry(match_item, score, matcher.confidence_label(score)))
             
             # For graffiti items, only show the best match -- unless the OCR
             # text lost the colour in brackets (the crop usually cuts it off),
             # in which case the best match is an arbitrary colour and every
             # colour is listed, like the wears of a skin.
-            elif best_match.get('item_type') == 'graffiti':
+            elif best_type == 'graffiti':
                 colour = re.search(r'\(([^)]*)\)\s*$', cleaned_name)
                 if colour:
                     # Every colour normalises to the same name, so the
@@ -927,65 +933,29 @@ def match_items_in_database(item_names):
                     # that was actually read.
                     chosen = closest_graffiti_colour(colour.group(1), match_result['all_wear_variations'])
                     if chosen is not None:
-                        best_match_entry.update(
-                            id=chosen.get('id'), name=chosen.get('name', 'Unknown Item'),
-                            collection=chosen.get('collection', ''), price=chosen.get('price'),
-                            price_type=chosen.get('price_type', 'unknown'))
+                        best_match_entry = candidate_entry(chosen, best_match_entry['score'],
+                                                           best_match_entry['confidence'])
                 match_list = [best_match_entry]
                 if not colour:
                     for variation in match_result['all_wear_variations']:
                         variation = ensure_dict(variation)
                         if variation.get('id') == best_match.get('id'):
                             continue
-                        match_list.append({
-                            'id': variation.get('id'),
-                            'name': variation.get('name', 'Unknown Item'),
-                            'collection': variation.get('collection', ''),
-                            'price': variation.get('price'),
-                            'price_type': variation.get('price_type', 'unknown'),
-                            'item_type': variation.get('item_type', ''),
-                            'score': 0.0,
-                            'confidence': 'variation'
-                        })
+                        match_list.append(candidate_entry(variation, 0.0, 'variation'))
             
-            # For all other items, process normally
+            # Skins: the best match, the other candidates, then every wear of
+            # the best match
             else:
-                # Add the best match
-                match_list.append(best_match_entry)
-                
-                # Add other matches if available
-                for match_data in match_result['matches'][1:]:  # Skip the first one as it's already added
+                match_list = [best_match_entry]
+                for match_data in match_result['matches'][1:]:
                     match_item = ensure_dict(match_data.get('item', {}))
                     score = match_data.get('score', 0)
-                    
-                    confidence = matcher.confidence_label(score)
-                    
-                    match_list.append({
-                        'id': match_item.get('id'),
-                        'name': match_item.get('name', 'Unknown Item'),
-                        'collection': match_item.get('collection', ''),
-                        'price': match_item.get('price'),
-                        'price_type': match_item.get('price_type', 'unknown'),
-                        'item_type': match_item.get('item_type', ''),
-                        'score': score,
-                        'confidence': confidence
-                    })
+                    match_list.append(candidate_entry(match_item, score, matcher.confidence_label(score)))
                 
-                # Add wear variations if they're not already in the matches
                 for variation in match_result['all_wear_variations']:
                     variation = ensure_dict(variation)
-                    # Check if this variation is already in the match list
                     if not any(match['id'] == variation.get('id') for match in match_list):
-                        match_list.append({
-                            'id': variation.get('id'),
-                            'name': variation.get('name', 'Unknown Item'),
-                            'collection': variation.get('collection', ''),
-                            'price': variation.get('price'),
-                            'price_type': variation.get('price_type', 'unknown'),
-                            'item_type': variation.get('item_type', ''),
-                            'score': 0.0,  # No direct match score
-                            'confidence': 'variation'  # Mark as a variation
-                        })
+                        match_list.append(candidate_entry(variation, 0.0, 'variation'))
             
             results.append({
                 'original': name,
@@ -1080,8 +1050,9 @@ def annotate_recommendation(item_results, rule=None, picks=RECOMMENDED_PICKS):
     on every match:
     `price_value`. Recommended slots and their `value_match` also get
     `recommended = True`, and slots get `pick_rank` (1-based). A slot whose
-    top match has 'low' confidence is valued but marked `uncertain` and never
-    recommended.
+    top match has 'low' confidence is valued but marked `uncertain`, and one
+    whose top match cannot be traded is valued at $0 and marked
+    `not_tradable`; neither is ever recommended.
 
     Returns the recommended slots, best first ([] when nothing has a price --
     the common state of a freshly built database).
@@ -1120,6 +1091,11 @@ def annotate_recommendation(item_results, rule=None, picks=RECOMMENDED_PICKS):
         result['value'] = chosen['price_value']
         result['price_min'] = priced[0]['price_value']
         result['price_max'] = priced[-1]['price_value']
+        # Non-tradable drops (Charm Detachment Pack) are worth $0 on the
+        # market and are never recommended over anything.
+        if not matches[0].get('tradable', True):
+            result['not_tradable'] = True
+            continue
         # A low-confidence top match was the right item only half the time on
         # the labelled screenshots, so it is valued but never recommended.
         if matches[0].get('confidence') == 'low':

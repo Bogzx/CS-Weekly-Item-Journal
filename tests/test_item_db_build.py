@@ -63,10 +63,20 @@ class TestItemLists:
         assert row['Steam Market API URL'].endswith(
             'market_hash_name=AUG%20%7C%20Anodized%20Navy%20%28Factory%20New%29')
 
-    def test_only_weapon_cases_are_listed(self, source):
+    def test_weapon_cases_and_sticker_capsules_are_listed(self, source):
+        """Souvenir packages and the gift package are not drop items."""
         rows = fetch_item_lists.case_rows(source['crates.json'])
 
-        assert [r['Case'] for r in rows] == ['Revolution Case', 'Kilowatt Case']
+        assert [r['Case'] for r in rows] == ['Revolution Case', 'Kilowatt Case', 'Sticker Capsule']
+
+    def test_only_drop_tools_are_listed_under_their_drop_name(self, source):
+        rows = fetch_item_lists.tool_rows(source['tools.json'])
+
+        assert rows == [{'Name': 'Charm Detachment Pack', 'Source ID': 'tool-4', 'Tradable': '0'}]
+
+    def test_missing_drop_tool_is_skipped_not_fatal(self, capsys):
+        assert fetch_item_lists.tool_rows([{'id': 'tool-1', 'name': 'Name Tag'}]) == []
+        assert 'tool-4' in capsys.readouterr().out
 
     def test_graffiti_needs_a_market_name(self, source):
         rows = fetch_item_lists.graffiti_rows(source['graffiti.json'])
@@ -79,12 +89,13 @@ class TestItemLists:
 
 
 class TestFetchCli:
-    def test_writes_all_three_csvs(self, tmp_path):
+    def test_writes_all_four_csvs(self, tmp_path):
         assert fetch_item_lists.main(['--source-dir', FIXTURES, '--out-dir', str(tmp_path)]) == 0
 
         assert len(read_csv(tmp_path / 'cs_skins.csv')) == 3
-        assert len(read_csv(tmp_path / 'cs_cases.csv')) == 2
+        assert len(read_csv(tmp_path / 'cs_cases.csv')) == 3
         assert len(read_csv(tmp_path / 'cs_graffiti.csv')) == 2
+        assert len(read_csv(tmp_path / 'cs_tools.csv')) == 1
         assert not list(tmp_path.glob('*.tmp'))
 
     def test_empty_source_leaves_existing_csvs_alone(self, tmp_path):
@@ -150,6 +161,7 @@ def built_db(tmp_path):
         '--skins', str(tmp_path / 'cs_skins.csv'),
         '--cases', str(tmp_path / 'cs_cases.csv'),
         '--graffiti', str(tmp_path / 'cs_graffiti.csv'),
+        '--tools', str(tmp_path / 'cs_tools.csv'),
     ]) == 0
     return db
 
@@ -170,8 +182,10 @@ class TestEndToEnd:
         assert items['Sealed Graffiti | Sorry (Tiger Orange)'] == 'graffiti'
         assert items['Sawed-Off | Forest DDPAT (Battle-Scarred)'] == 'skin'
         assert items['AUG | Anodized Navy (Minimal Wear)'] == 'skin'
-        # 5 + 2 + 5 skin rows, 2 cases, 2 graffiti
-        assert len(items) == 16
+        assert items['Sticker Capsule'] == 'case'
+        assert items['Charm Detachment Pack'] == 'tool'
+        # 5 + 2 + 5 skin rows, 2 cases + 1 capsule, 2 graffiti, 1 tool
+        assert len(items) == 18
 
     def test_wears_a_skin_does_not_come_in_are_not_created(self, built_db):
         assert 'AUG | Anodized Navy (Field-Tested)' not in item_names(built_db)
@@ -199,6 +213,7 @@ class TestEndToEnd:
             '--skins', str(tmp_path / 'cs_skins.csv'),
             '--cases', str(tmp_path / 'cs_cases.csv'),
             '--graffiti', str(tmp_path / 'cs_graffiti.csv'),
+            '--tools', str(tmp_path / 'cs_tools.csv'),
         ]) == 0
         assert item_names(built_db) == before
 
@@ -212,10 +227,107 @@ def test_verify_database_reports_the_built_db(built_db, capsys):
     from Src.DB import verify_database
 
     assert verify_database.verify_database(built_db) is True
-    assert 'Row count: 16' in capsys.readouterr().out
+    assert 'Row count: 18' in capsys.readouterr().out
 
 
 def test_verify_database_fails_for_a_missing_file(tmp_path):
     from Src.DB import verify_database
 
     assert verify_database.verify_database(str(tmp_path / 'nope.db')) is False
+
+
+class TestNonTradableTools:
+    def row(self, db, name):
+        conn = sqlite3.connect(db)
+        try:
+            return conn.execute("SELECT price, price_type, tradable, item_type FROM items WHERE name = ?",
+                                (name,)).fetchone()
+        finally:
+            conn.close()
+
+    def test_tool_is_stored_as_not_tradable_and_worth_nothing(self, built_db):
+        assert self.row(built_db, 'Charm Detachment Pack') == (0.0, 'not_tradable', 0, 'tool')
+        assert self.row(built_db, 'Revolution Case')[2] == 1
+
+    def test_price_scraper_leaves_the_tool_alone(self, built_db):
+        bulk_scraper.update_database_prices(
+            built_db, {'Revolution Case': {'price': 0.5, 'price_type': 'lowest', 'listings': 1}})
+
+        assert self.row(built_db, 'Charm Detachment Pack')[:2] == (0.0, 'not_tradable')
+
+    def test_ocr_text_matches_the_tool(self, built_db):
+        for text in ('Charm Detachment Pack', 'rharm Detachmont Pack'):
+            result = ItemMatcher(built_db).match_with_confidence(text)
+            assert result['best_match']['name'] == 'Charm Detachment Pack', text
+
+    def test_database_from_before_the_flag_is_upgraded(self, tmp_path):
+        db = str(tmp_path / 'old.db')
+        conn = sqlite3.connect(db)
+        conn.execute("CREATE TABLE items (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, "
+                     "collection TEXT, market_api_url TEXT NOT NULL, price REAL, price_type TEXT, "
+                     "last_updated TIMESTAMP, item_type TEXT, UNIQUE(name, collection))")
+        conn.execute("CREATE TABLE collections (id INTEGER PRIMARY KEY, name TEXT UNIQUE)")
+        conn.commit()
+        conn.close()
+        assert fetch_item_lists.main(['--source-dir', FIXTURES, '--out-dir', str(tmp_path)]) == 0
+
+        assert populate_database.main(['--db', db, '--skins', str(tmp_path / 'cs_skins.csv'),
+                                       '--cases', str(tmp_path / 'cs_cases.csv'),
+                                       '--graffiti', str(tmp_path / 'cs_graffiti.csv'),
+                                       '--tools', str(tmp_path / 'cs_tools.csv')]) == 0
+        assert self.row(db, 'Charm Detachment Pack')[2] == 0
+
+
+@pytest.fixture(scope='module')
+def container_matcher(tmp_path_factory):
+    """Every weapon case and sticker capsule ByMykel lists, as the DB holds them."""
+    import json
+
+    with open(os.path.join(FIXTURES, 'containers.json'), encoding='utf-8') as f:
+        rows = fetch_item_lists.case_rows(json.load(f))
+    db = str(tmp_path_factory.mktemp('containers') / 'items.db')
+    create_database.create_csgo_database(db)
+    conn = sqlite3.connect(db)
+    populate_database.populate_cases(conn, rows)
+    conn.close()
+    return ItemMatcher(db), [r['Case'] for r in rows]
+
+
+class TestCapsuleCollisions:
+    def test_counts(self, container_matcher):
+        _, names = container_matcher
+        assert len(names) == 42 + 91
+
+    def test_every_case_and_capsule_matches_itself(self, container_matcher):
+        """91 capsules include near-twins ('Sticker Capsule' / 'Sticker
+        Capsule 2', Legends/Challengers/Contenders triples)."""
+        matcher, names = container_matcher
+        wrong = {}
+        for name in names:
+            result = matcher.match_with_confidence(name, item_type=matcher.detect_item_type(name))
+            if result['best_match']['name'] != name or result['confidence'] != 'high':
+                wrong[name] = (result['best_match']['name'], round(result['score'], 3))
+        assert not wrong
+
+    @pytest.mark.parametrize('ocr,expected', [
+        # Case OCR from the labelled Training_Images (round 3)
+        ('Revolution Cose', 'Revolution Case'),
+        ('Revolution Caao', 'Revolution Case'),
+        ('Recdii Case', 'Recoil Case'),
+        ('Rccoil Cato', 'Recoil Case'),
+        ('RevosJlion Coso', 'Revolution Case'),
+        ('Fracture Cose', 'Fracture Case'),
+        ('cS:G0 Weapon Cose', 'CS:GO Weapon Case'),
+        ('Dreams & Nightrare s Cese', 'Dreams & Nightmares Case'),
+        ('Dronms 8 Nighunaros Caza', 'Dreams & Nightmares Case'),
+        ('Snakebite Cose', 'Snakebite Case'),
+        # and capsules read with typical slips
+        ('Sticker Capsule 2', 'Sticker Capsule 2'),
+        ('Sticker Capsu1e', 'Sticker Capsule'),
+        ('Copenhagen 2024 Legends Sticker Capsule', 'Copenhagen 2024 Legends Sticker Capsule'),
+    ])
+    def test_ocr_of_cases_is_not_captured_by_a_capsule(self, container_matcher, ocr, expected):
+        matcher, _ = container_matcher
+        result = matcher.match_with_confidence(ocr, item_type=matcher.detect_item_type(ocr))
+
+        assert result['best_match']['name'] == expected
