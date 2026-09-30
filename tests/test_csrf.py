@@ -25,6 +25,31 @@ def test_wrong_token_is_rejected(logged_in):
     assert resp.status_code == 400
 
 
+@pytest.mark.parametrize('token', ['é', '\u2603' * 43])
+def test_non_ascii_token_is_a_400_not_a_500(logged_in, token):
+    logged_in.get('/')  # renders a form, so the session holds a real token
+    resp = logged_in.post('/clear_journal', data={'csrf_token': token}, csrf=False)
+
+    assert resp.status_code == 400
+
+
+def test_token_changes_at_login(appmod, client):
+    """session.clear() at login drops the anonymous token, so one planted
+    before login (session fixation of the token) is not valid afterwards."""
+    name = f'user_{uuid.uuid4().hex[:8]}'
+    register(client, name)
+    with client.session_transaction() as sess:
+        before = sess[appmod.CSRF_SESSION_KEY]
+
+    client.post('/login', data={'username': name, 'password': 'pw-123456'})
+    client.get('/')
+    with client.session_transaction() as sess:
+        after = sess[appmod.CSRF_SESSION_KEY]
+
+    assert after != before
+    assert client.post('/clear_journal', data={'csrf_token': before}, csrf=False).status_code == 400
+
+
 def test_token_from_the_rendered_form_is_accepted(appmod, client):
     """End to end, the way a browser does it: GET the form, post it back."""
     name = f'user_{uuid.uuid4().hex[:8]}'

@@ -240,7 +240,9 @@ def csrf_protect():
         return None
     expected = session.get(CSRF_SESSION_KEY)
     sent = request.form.get(CSRF_FIELD) or request.headers.get('X-CSRF-Token')
-    if not expected or not sent or not hmac.compare_digest(str(sent), str(expected)):
+    # compare_digest raises TypeError on non-ASCII str, which turned a forged
+    # token such as 'é' into a 500; compare bytes instead.
+    if not expected or not sent or not hmac.compare_digest(str(sent).encode(), str(expected).encode()):
         app.logger.warning("Rejected POST %s: missing or invalid CSRF token", request.path)
         return ('The form was missing its security token or it has expired. '
                 'Go back, reload the page and try again.', 400,
