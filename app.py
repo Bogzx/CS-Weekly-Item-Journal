@@ -31,6 +31,17 @@ load_dotenv()
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
+def repo_path(path):
+    """Resolve a relative path against the repository root, not the CWD.
+
+    The defaults (and the relative paths in .env.EXAMPLE) used to be resolved
+    against whatever directory `python app.py` was launched from, so starting
+    the app from anywhere but the repo root created an empty database and
+    failed to find the model.
+    """
+    return path if os.path.isabs(path) else os.path.join(BASE_DIR, path)
+
+
 def _env_bool(name, default):
     """Read a boolean from the environment, accepting 1/true/yes/on."""
     raw = os.environ.get(name)
@@ -78,11 +89,11 @@ REMEMBERED_SESSION_LIFETIME = timedelta(days=int(os.environ.get('SESSION_LIFETIM
 UNREMEMBERED_SESSION_LIFETIME = timedelta(hours=1)
 
 # Configure the session to use cookies
-app.config['UPLOAD_FOLDER'] = 'uploads'
+app.config['UPLOAD_FOLDER'] = repo_path(os.environ.get('UPLOAD_FOLDER', 'uploads'))
 app.config['MAX_CONTENT_LENGTH'] = 256 * 1024 * 1024  # 256MB max upload (increased from 128MB)
 app.config['MAX_CONTENT_PATH'] = 16 * 1024 * 1024  # 16MB max for form fields
-app.config['DATABASE'] = os.environ.get('DATABASE_PATH', 'csgo_items.db')
-app.config['MODEL_PATH'] = os.environ.get('MODEL_PATH', os.path.join('Models', 'BOX_TRAINED.pt'))
+app.config['DATABASE'] = repo_path(os.environ.get('DATABASE_PATH', 'csgo_items.db'))
+app.config['MODEL_PATH'] = repo_path(os.environ.get('MODEL_PATH', os.path.join('Models', 'BOX_TRAINED.pt')))
 app.config['SESSION_TYPE'] = 'filesystem'
 app.config['SESSION_PERMANENT'] = True
 app.config['PERMANENT_SESSION_LIFETIME'] = REMEMBERED_SESSION_LIFETIME
@@ -1177,9 +1188,7 @@ def update_prices_job():
     try:
         # Path to the configuration file, resolved against the repo root so the
         # job does not depend on the process working directory.
-        config_path = os.environ.get(
-            'PRICE_UPDATE_CONFIG', os.path.join(BASE_DIR, 'price_update_config.json')
-        )
+        config_path = repo_path(os.environ.get('PRICE_UPDATE_CONFIG', 'price_update_config.json'))
 
         # Write a working default rather than giving up. .gitignore used to
         # ignore all *.json, so this file could never be committed and the job
