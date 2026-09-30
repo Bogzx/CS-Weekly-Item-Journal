@@ -301,7 +301,9 @@ pytest -q -m "not slow"
   per request. A priced database published as a GitHub Release asset would make
   the first run instant.
 * **Built for your own machine or LAN.** Logins are throttled per client IP
-  (in memory) and every form POST carries a CSRF token, but there is no
+  (per /64 for IPv6, in memory; not per account, so a botnet spreading guesses
+  over many addresses is not stopped) and every form POST carries a CSRF
+  token, but there is no
   HTTPS, no password reset and no account deletion. Put it behind a TLS proxy
   (and set `SESSION_COOKIE_SECURE=True`, and `TRUSTED_PROXIES=1` so the
   login throttle sees real client addresses) before exposing it more widely.

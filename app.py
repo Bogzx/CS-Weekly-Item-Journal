@@ -3,6 +3,7 @@ import uuid
 import time
 import re
 import hmac
+import ipaddress
 import secrets
 import sqlite3
 import threading
@@ -358,50 +359,88 @@ class LoginThrottle:
 
     In-memory and per-process: enough to stop an online password guesser
     against a single `python app.py` instance, and it needs no extra service.
-    Failures older than `window` seconds are forgotten; a successful login
-    clears the client's count. Behind a reverse proxy every client shares the
-    proxy's address, so run the app directly or set up ProxyFix first.
+    Failures older than `window` seconds are forgotten. Behind a reverse proxy
+    every client shares the proxy's address, so run the app directly or set
+    TRUSTED_PROXIES first.
+
+    An attempt is counted *before* the password is checked (begin_attempt),
+    so parallel requests cannot all slip in under the limit while the slow
+    password hash runs. A successful login then clears only that username's
+    failures: clearing the whole client let anyone with an account of their
+    own guess max_failures - 1 passwords, log in as themselves, and repeat.
     """
 
     def __init__(self, max_failures, window, clock=time.monotonic):
         self.max_failures = max_failures
         self.window = window
         self.clock = clock
-        self._failures = {}
+        self._failures = {}  # key -> deque of (timestamp, username)
         self._lock = threading.Lock()
 
     def _recent(self, key, now):
         failures = self._failures.get(key)
         if failures is None:
             return None
-        while failures and failures[0] <= now - self.window:
+        while failures and failures[0][0] <= now - self.window:
             failures.popleft()
         if not failures:
             del self._failures[key]
             return None
         return failures
 
+    def _retry_after(self, key, now):
+        failures = self._recent(key, now)
+        if failures is None or len(failures) < self.max_failures:
+            return 0
+        return max(1, int(failures[-self.max_failures][0] + self.window - now + 0.999))
+
     def retry_after(self, key):
         """Seconds until `key` may try again, or 0 if it is not locked out."""
         if self.max_failures <= 0:
             return 0
         with self._lock:
-            now = self.clock()
-            failures = self._recent(key, now)
-            if failures is None or len(failures) < self.max_failures:
-                return 0
-            return max(1, int(failures[-self.max_failures] + self.window - now + 0.999))
+            return self._retry_after(key, self.clock())
 
-    def record_failure(self, key):
+    def _append(self, key, now, username):
+        failures = self._recent(key, now)
+        if failures is None:
+            failures = self._failures[key] = deque()
+        failures.append((now, username))
+        # Only the newest max_failures entries matter.
+        while len(failures) > max(self.max_failures, 1):
+            failures.popleft()
+
+    def begin_attempt(self, key, username=None):
+        """Count an attempt as failed unless succeeded() is called for it.
+
+        Returns 0 if the attempt may go ahead, or the seconds to wait if the
+        client is locked out (then nothing is recorded). The check and the
+        count happen under one lock.
+        """
+        if self.max_failures <= 0:
+            return 0
         with self._lock:
             now = self.clock()
-            failures = self._recent(key, now)
+            wait = self._retry_after(key, now)
+            if not wait:
+                self._append(key, now, username)
+            return wait
+
+    def succeeded(self, key, username=None):
+        """Forget `key`'s failures for `username`, and only for it."""
+        with self._lock:
+            failures = self._failures.get(key)
             if failures is None:
-                failures = self._failures[key] = deque()
-            failures.append(now)
-            # Only the newest max_failures timestamps matter.
-            while len(failures) > max(self.max_failures, 1):
-                failures.popleft()
+                return
+            kept = deque(f for f in failures if f[1] != username)
+            if kept:
+                self._failures[key] = kept
+            else:
+                del self._failures[key]
+
+    def record_failure(self, key, username=None):
+        with self._lock:
+            self._append(key, self.clock(), username)
 
     def reset(self, key=None):
         with self._lock:
@@ -409,6 +448,23 @@ class LoginThrottle:
                 self._failures.clear()
             else:
                 self._failures.pop(key, None)
+
+
+def throttle_key(address):
+    """The login-throttle key for a client address.
+
+    An IPv6 client usually controls a whole /64, so one bucket per /64:
+    otherwise every guess could come from a fresh address.
+    """
+    try:
+        ip = ipaddress.ip_address(address)
+    except ValueError:
+        return address or 'unknown'
+    if ip.version == 6:
+        if ip.ipv4_mapped is not None:
+            return str(ip.ipv4_mapped)
+        return str(ipaddress.ip_network(f'{ip}/64', strict=False))
+    return str(ip)
 
 
 login_throttle = LoginThrottle(
@@ -1202,6 +1258,14 @@ def register():
     
     return render_template('register.html')
 
+def locked_out(wait):
+    """The login page with a 429 for a client the throttle has locked out."""
+    minutes = (wait + 59) // 60
+    flash(f'Too many failed login attempts. Try again in {minutes} minute'
+          f'{"s" if minutes != 1 else ""}.', 'error')
+    return render_template('login.html'), 429
+
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     """User login page."""
@@ -1210,13 +1274,10 @@ def login():
         password = request.form.get('password', '')
         remember = 'remember' in request.form
         
-        client_key = request.remote_addr or 'unknown'
+        client_key = throttle_key(request.remote_addr)
         wait = login_throttle.retry_after(client_key)
         if wait:
-            minutes = (wait + 59) // 60
-            flash(f'Too many failed login attempts. Try again in {minutes} minute'
-                  f'{"s" if minutes != 1 else ""}.', 'error')
-            return render_template('login.html'), 429
+            return locked_out(wait)
 
         error = None
         if not username:
@@ -1225,6 +1286,10 @@ def login():
             error = 'Password is required.'
             
         if error is None:
+            # Counted before the (slow) password check; see LoginThrottle.
+            wait = login_throttle.begin_attempt(client_key, username)
+            if wait:
+                return locked_out(wait)
             conn = get_db()
             user = conn.execute(
                 'SELECT id, username, password_hash FROM users WHERE username = ?',
@@ -1235,10 +1300,9 @@ def login():
             # out which usernames are registered.
             if user is None or not check_password_hash(user['password_hash'], password):
                 error = 'Invalid username or password.'
-                login_throttle.record_failure(client_key)
             else:
                 # Login successful
-                login_throttle.reset(client_key)
+                login_throttle.succeeded(client_key, username)
                 session.clear()
                 session['user_id'] = user['id']
                 
