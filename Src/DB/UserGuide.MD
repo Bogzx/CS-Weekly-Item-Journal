@@ -56,7 +56,8 @@ This will:
 
 * Create a new file named `csgo_items.db` in the current directory
 * Set up all required tables (items, collections, etc.)
-* If a database already exists with this name, it will be deleted and recreated
+* If a database already exists with this name it is left untouched. Pass
+  `--force` to rebuild the item tables; user accounts and journals are kept
 
 ### 2. Generating CS:GO Skins Data
 
@@ -204,7 +205,7 @@ If you encounter rate limiting from Steam:
 
 If you encounter database errors:
 
-* Try recreating the database: `python Src/DB/create_database.py`
+* Try rebuilding the item tables: `python Src/DB/create_database.py --force`
 * Check file permissions
 * Verify the CSV files have the correct format
 
@@ -224,7 +225,7 @@ python Src/DB/bulk_scraper.py --help
 
 ```bash
 # Create database in custom location
-python Src/DB/create_database.py my_custom_db.db
+python Src/DB/create_database.py --db my_custom_db.db
 
 # Use custom paths for everything
 python Src/DB/populate_database.py --db my_custom_db.db --skins my_skins.csv --cases my_cases.csv
