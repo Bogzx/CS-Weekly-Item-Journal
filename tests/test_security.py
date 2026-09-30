@@ -106,24 +106,6 @@ class TestResolveSecretKey:
         assert isinstance(key, bytes) and len(key) == 24
 
 
-@pytest.fixture
-def client(appmod):
-    appmod.app.config['TESTING'] = True
-    with appmod.app.test_client() as client:
-        yield client
-
-
-@pytest.fixture
-def logged_in(client):
-    name = f'user_{uuid.uuid4().hex[:8]}'
-    client.post('/register', data={
-        'username': name, 'email': f'{name}@example.com',
-        'password': 'pw-123456', 'confirm_password': 'pw-123456',
-    })
-    client.post('/login', data={'username': name, 'password': 'pw-123456'})
-    return client
-
-
 class TestRoutes:
     def test_login_does_not_redirect_off_site(self, client):
         name = f'user_{uuid.uuid4().hex[:8]}'

@@ -10,6 +10,7 @@ get_processor() in app.py -- so this stays fast.
 import os
 import sys
 import tempfile
+import uuid
 
 import pytest
 
@@ -33,3 +34,25 @@ def appmod():
     """The imported app module."""
     import app
     return app
+
+
+@pytest.fixture
+def client(appmod):
+    appmod.app.config['TESTING'] = True
+    with appmod.app.test_client() as client:
+        yield client
+
+
+def register(client, name, password='pw-123456'):
+    return client.post('/register', data={
+        'username': name, 'email': f'{name}@example.com',
+        'password': password, 'confirm_password': password,
+    })
+
+
+@pytest.fixture
+def logged_in(client):
+    name = f'user_{uuid.uuid4().hex[:8]}'
+    register(client, name)
+    client.post('/login', data={'username': name, 'password': 'pw-123456'})
+    return client

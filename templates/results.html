@@ -223,6 +223,13 @@
         .recommendation-banner .rec-item {
             font-size: 1.1em;
         }
+        .recommendation-banner .rec-list {
+            margin: 4px 0 8px 0;
+            padding-left: 22px;
+        }
+        .slot-value {
+            margin: 0 0 10px 0;
+        }
         .recommendation-banner .rec-price {
             font-weight: bold;
             color: #1b7a34;
@@ -307,16 +314,26 @@
                 
                 {% if item_results %}
 
-                {% if recommendation and recommendation.best_match %}
+                {% if recommendations %}
                 <div class="recommendation-banner">
-                    <p class="rec-title">⭐ Recommended pick — highest market value</p>
-                    <p class="rec-item">
-                        <strong>{{ recommendation.best_match.name }}</strong>
-                        — <span class="rec-price">${{ "%.2f"|format(recommendation.best_price) }}</span>
-                    </p>
+                    <p class="rec-title">⭐ Recommended {{ 'picks' if recommendations|length > 1 else 'pick' }} — you can claim 2 of the 4 items</p>
+                    <ol class="rec-list">
+                    {% for rec in recommendations %}
+                        <li class="rec-item">
+                            <strong>{{ rec.display_name }}</strong>
+                            — <span class="rec-price">${{ "%.2f"|format(rec.value) }}</span>
+                            {% if rec.priced_variants > 1 %}
+                            <span class="score">(${{ "%.2f"|format(rec.price_min) }}–${{ "%.2f"|format(rec.price_max) }} across {{ rec.priced_variants }} wears)</span>
+                            {% endif %}
+                        </li>
+                    {% endfor %}
+                    </ol>
                     <p class="score">
-                        Based on the most recent Steam Market price stored for each candidate.
-                        It is pre-selected below; untick it if the match looks wrong.
+                        Ranked by the most recent Steam Market price stored for each item. The drop
+                        screen does not show a skin's wear, so skins are valued at their
+                        <strong>{{ valuation_label }}</strong> (<code>VALUATION_RULE={{ valuation_rule }}</code>).
+                        The matching entries are pre-selected below; change them once you know the wear,
+                        or untick one if the match looks wrong.
                     </p>
                 </div>
                 {% elif item_results %}
@@ -337,7 +354,17 @@
 
                     {% for result in item_results %}
                     <div class="item-box{% if result.recommended %} recommended{% endif %}">
-                        <h3>Detected: {{ result.original }}</h3>
+                        <h3>Detected: {{ result.original }}
+                            {% if result.pick_rank %}<span class="rec-badge">Pick {{ result.pick_rank }}</span>{% endif %}
+                        </h3>
+                        {% if result.value is not none %}
+                        <p class="slot-value">
+                            Value: <span class="price-tag">${{ "%.2f"|format(result.value) }}</span>
+                            {% if result.priced_variants > 1 %}
+                            <span class="score">· range ${{ "%.2f"|format(result.price_min) }}–${{ "%.2f"|format(result.price_max) }} over {{ result.priced_variants }} priced wears ({{ valuation_label }} counts)</span>
+                            {% endif %}
+                        </p>
+                        {% endif %}
                         {% if result.status == 'found' %}
                             {% if result.matches %}
                                 {% for match in result.matches %}
@@ -350,7 +377,7 @@
                                         {% else %}
                                         <span class="price-unknown">- no price data</span>
                                         {% endif %}
-                                        {% if match.recommended %}<span class="rec-badge">Best value</span>{% endif %}
+                                        {% if match.recommended %}<span class="rec-badge">Recommended</span>{% endif %}
                                         <div class="score">
                                             Confidence: {{ match.confidence }}
                                             {% if match.score > 0 %}
