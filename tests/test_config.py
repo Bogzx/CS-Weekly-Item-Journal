@@ -20,3 +20,18 @@ def test_default_model_path_points_at_the_committed_weights(appmod, repo_root):
     if 'MODEL_PATH' not in os.environ:
         assert appmod.app.config['MODEL_PATH'] == os.path.join(repo_root, 'Models', 'BOX_TRAINED.pt')
     assert os.path.exists(appmod.app.config['MODEL_PATH'])
+
+
+def test_opencv_distributions_agree():
+    """opencv-python (from ultralytics) and opencv-python-headless (from
+    easyocr) both install the `cv2` package. Different versions overwrite each
+    other's files; requirements.txt pins both to the same range."""
+    from importlib import metadata
+
+    versions = {}
+    for dist in ('opencv-python', 'opencv-python-headless'):
+        try:
+            versions[dist] = metadata.version(dist)
+        except metadata.PackageNotFoundError:
+            pass
+    assert len(set(versions.values())) <= 1, versions
