@@ -303,3 +303,14 @@ class TestGraffitiMatching:
 
         assert [m['name'] for m in results[1]['matches']] == ['Sealed Graffiti | Sorry (Tiger Orange)']
         assert results[1]['matches'][0]['price'] == 0.05
+
+    def test_type_only_text_is_not_matched_to_an_arbitrary_graffiti(self, appmod, graffiti_matcher):
+        """The golden screenshot's 4th slot OCRs as just 'Sealed Graffiti'.
+        That scored 1.0 ('high') against every graffiti, and the arbitrary
+        pick could become a recommendation."""
+        results = appmod.match_items_in_database(['Revolution Case', 'Sealed Graffiti'])
+
+        assert results[1]['status'] == 'name_missing'
+        assert results[1]['matches'] == []
+        appmod.annotate_recommendation(results)
+        assert results[1]['value'] is None

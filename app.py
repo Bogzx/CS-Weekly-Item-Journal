@@ -74,9 +74,9 @@ WEAR_NAMES = ("Factory New", "Minimal Wear", "Field-Tested", "Well-Worn", "Battl
 #   median  - the middle wear price
 #   highest - the priciest wear, usually Factory New (the old behaviour)
 VALUATION_RULES = {
-    'lowest': 'cheapest wear',
-    'median': 'median wear price',
-    'highest': 'priciest wear',
+    'lowest': 'lowest price',
+    'median': 'median price',
+    'highest': 'highest price',
 }
 DEFAULT_VALUATION_RULE = 'lowest'
 
@@ -779,6 +779,10 @@ def closest_graffiti_colour(ocr_colour, variations):
     return best if best_ratio >= 0.6 else None
 
 
+# Normalised OCR texts that name only an item type, not an item.
+TYPE_ONLY_TEXTS = {'sealed graffiti', 'graffiti', 'sealed', ''}
+
+
 def match_items_in_database(item_names):
     """Match detected item names to the database using the ItemMatcher."""
     results = []
@@ -790,6 +794,19 @@ def match_items_in_database(item_names):
                 'original': name,
                 'cleaned': cleaned_name,
                 'status': 'empty',
+                'matches': []
+            })
+            continue
+
+        # Text that is only an item-type prefix ("Sealed Graffiti" with the
+        # name cut off by the crop) scores 1.0 against *every* graffiti, so
+        # the "match" was an arbitrary one at an arbitrary price -- and could
+        # even become a recommended pick. Say what happened instead.
+        if matcher.normalize_text(cleaned_name) in TYPE_ONLY_TEXTS:
+            results.append({
+                'original': name,
+                'cleaned': cleaned_name,
+                'status': 'name_missing',
                 'matches': []
             })
             continue
