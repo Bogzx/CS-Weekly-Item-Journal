@@ -1,6 +1,5 @@
 import sqlite3
 import requests
-import json
 import time
 import argparse
 import os

@@ -695,7 +695,7 @@ def ensure_dict(obj):
     if hasattr(obj, 'keys') and callable(obj.keys):
         try:
             return dict(obj)
-        except:
+        except (TypeError, ValueError):
             pass
     
     # Handle objects with __dict__ attribute
@@ -710,7 +710,7 @@ def ensure_dict(obj):
     if hasattr(obj, '__iter__') and not isinstance(obj, (str, bytes)):
         try:
             return {i: v for i, v in enumerate(obj)}
-        except:
+        except TypeError:
             pass
     
     # If all else fails, just wrap it in a dictionary
@@ -1593,15 +1593,6 @@ def init_scheduler():
         name='Daily price update',
         replace_existing=True
     )
-    from datetime import datetime
-    from apscheduler.triggers.date import DateTrigger
-    
-    '''scheduler.add_job(
-        update_prices_job,
-        trigger=DateTrigger(run_date=datetime.now()),
-        id='price_update_test_job',
-        name='Immediate test update'
-    )'''
     
     # Start the scheduler
     scheduler.start()

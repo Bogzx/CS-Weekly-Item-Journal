@@ -42,10 +42,10 @@ jobs:
       - name: Check dependency consistency
         run: pip check
 
-      - name: Lint (syntax errors and undefined names only)
+      - name: Lint (rules pinned in ruff.toml)
         run: |
           pip install ruff
-          ruff check --select E9,F63,F7,F82 .
+          ruff check .
 
       - name: Import the app without loading the model
         # app.py must import cleanly. The processor is lazy (see

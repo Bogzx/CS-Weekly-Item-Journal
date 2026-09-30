@@ -1,6 +1,5 @@
 import sqlite3
 import requests
-import json
 import time
 import argparse
 import os
@@ -246,7 +245,7 @@ def update_prices(db_path, collection_filter=None, max_items=None, retry_on_rate
     # Close connection
     conn.close()
     
-    print(f"\nSummary:")
+    print("\nSummary:")
     print(f"- Total items updated: {counter}")
     print(f"- Items with lowest price: {lowest_count}")
     print(f"- Items with median price: {median_count}")
