@@ -6,6 +6,13 @@ import sys
 import urllib.parse
 from datetime import datetime
 
+
+def now_timestamp():
+    """Local time as SQLite TEXT, the same format sqlite3's default datetime
+    adapter wrote (that adapter is deprecated since Python 3.12)."""
+    return datetime.now().isoformat(sep=' ')
+
+
 def read_csv_file(file_path):
     """
     Read a CSV file and return the data as a list of dictionaries
@@ -155,7 +162,7 @@ def populate_skins(conn, skins_data, target_collections=None):
                 cursor.execute('''
                 INSERT OR IGNORE INTO items (name, collection, market_api_url, item_type, last_updated)
                 VALUES (?, ?, ?, ?, ?)
-                ''', (item_name, collection, url, 'skin', datetime.now()))
+                ''', (item_name, collection, url, 'skin', now_timestamp()))
                 
                 if cursor.rowcount > 0:
                     counter += 1
@@ -217,7 +224,7 @@ def populate_cases(conn, cases_data, target_collections=None):
             cursor.execute('''
             INSERT OR IGNORE INTO items (name, collection, market_api_url, item_type, last_updated)
             VALUES (?, ?, ?, ?, ?)
-            ''', (case_name, case_name, url, 'case', datetime.now()))
+            ''', (case_name, case_name, url, 'case', now_timestamp()))
             
             if cursor.rowcount > 0:
                 counter += 1
@@ -277,7 +284,7 @@ def populate_graffiti(conn, graffiti_data, target_collections=None):
             cursor.execute('''
             INSERT OR IGNORE INTO items (name, collection, market_api_url, item_type, last_updated)
             VALUES (?, ?, ?, ?, ?)
-            ''', (graffiti_name, collection, url, 'graffiti', datetime.now()))
+            ''', (graffiti_name, collection, url, 'graffiti', now_timestamp()))
             
             if cursor.rowcount > 0:
                 counter += 1

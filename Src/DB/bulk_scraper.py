@@ -12,6 +12,13 @@ try:
 except ImportError:  # imported as Src.DB.bulk_scraper rather than run directly
     from Src.DB.steam_headers import STEAM_HEADERS, STEAM_TIMEOUT
 
+
+def now_timestamp():
+    """Local time as SQLite TEXT, the same format sqlite3's default datetime
+    adapter wrote (that adapter is deprecated since Python 3.12)."""
+    return datetime.now().isoformat(sep=' ')
+
+
 def build_steam_market_url(start=0, count=100, filters=None, query=None, sort_column='price', sort_dir='asc'):
     """
     Build a Steam Market URL with specified filters for CS2 items
@@ -303,7 +310,7 @@ def update_database_prices(db_path, price_data, collection_filter=None):
             try:
                 cursor.execute(
                     "UPDATE items SET price = ?, price_type = ?, last_updated = ? WHERE id = ?",
-                    (price, price_type, datetime.now(), item_id)
+                    (price, price_type, now_timestamp(), item_id)
                 )
                 counter += 1
                 if counter % 100 == 0:

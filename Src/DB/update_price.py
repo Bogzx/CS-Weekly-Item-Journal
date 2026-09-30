@@ -12,6 +12,12 @@ try:
 except ImportError:  # imported as Src.DB.update_price rather than run directly
     from Src.DB.steam_headers import STEAM_HEADERS, STEAM_TIMEOUT
 
+def now_timestamp():
+    """Local time as SQLite TEXT, the same format sqlite3's default datetime
+    adapter wrote (that adapter is deprecated since Python 3.12)."""
+    return datetime.now().isoformat(sep=' ')
+
+
 # priceoverview is requested without a `currency` parameter, so Steam answers
 # in USD: "$0.03", "$1,234.56". Anything else is refused rather than guessed.
 _USD_PRICE = re.compile(r'^\$\s*(\d{1,3}(?:,\d{3})*|\d+)(\.\d+)?(?:\s*USD)?$')
@@ -221,7 +227,7 @@ def update_prices(db_path, collection_filter=None, max_items=None, retry_on_rate
                     execute_with_retry(
                         conn,
                         "UPDATE items SET price = ?, price_type = ?, last_updated = ? WHERE id = ?",
-                        (price, price_type, datetime.now(), item_id)
+                        (price, price_type, now_timestamp(), item_id)
                     )
                     # Commit after each update to release locks faster
                     conn.commit()
