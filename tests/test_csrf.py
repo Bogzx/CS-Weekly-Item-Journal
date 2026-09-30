@@ -19,10 +19,19 @@ def test_post_without_token_is_rejected(logged_in, path):
     assert b'security token' in resp.data
 
 
-def test_wrong_token_is_rejected(logged_in):
-    resp = logged_in.post('/clear_journal', data={'csrf_token': 'forged'}, csrf=False)
+def test_wrong_token_is_rejected(appmod, logged_in):
+    # Login clears the session, so render a page first: without a token in
+    # the session this was rejected before the comparison ever ran, and the
+    # test passed even with a check that accepted any token.
+    logged_in.get('/')
+    with logged_in.session_transaction() as sess:
+        real = sess[appmod.CSRF_SESSION_KEY]
 
-    assert resp.status_code == 400
+    forged = logged_in.post('/clear_journal', data={'csrf_token': 'x' * len(real)}, csrf=False)
+    genuine = logged_in.post('/clear_journal', data={'csrf_token': real}, csrf=False)
+
+    assert forged.status_code == 400
+    assert genuine.status_code == 302
 
 
 @pytest.mark.parametrize('token', ['é', '\u2603' * 43])
