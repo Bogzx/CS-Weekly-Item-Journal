@@ -267,6 +267,12 @@ committed screenshot and asserts the four item names still come out. It is slow
 (it downloads EasyOCR weights on first run) but it catches model-load breakage,
 `ultralytics` drift, EasyOCR changes and CS2 UI changes in one assertion.
 
+`tools/ocr_accuracy.py` runs the pipeline over every hand-labelled screenshot
+in `Training_Images/` (labels: `tests/fixtures/expected_names.json`) and
+prints per-slot OCR accuracy; with `--db csgo_items.db` it also reports how
+often the app picks the right item. The slow suite fails if the aggregate
+drops below the tuned level.
+
 `tests/test_item_db_build.py` builds the item database end to end from
 committed ByMykel fixtures (no network) and checks that the result matches
 drops and takes Steam prices.
