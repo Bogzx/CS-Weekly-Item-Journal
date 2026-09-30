@@ -59,6 +59,38 @@ DEFAULT_PRICE_UPDATE_CONFIG = {
 }
 
 
+# Skin wears, best first. The care-package screen does not show which one
+# you would get.
+WEAR_NAMES = ("Factory New", "Minimal Wear", "Field-Tested", "Well-Worn", "Battle-Scarred")
+
+# How a slot is valued when its exact item is unknown (a skin of unknown
+# wear). Only the top match's own wear variants are considered; the rule picks
+# which of their prices counts. Set with VALUATION_RULE in .env.
+#   lowest  - the cheapest wear: a floor on what the drop is worth (default)
+#   median  - the middle wear price
+#   highest - the priciest wear, usually Factory New (the old behaviour)
+VALUATION_RULES = {
+    'lowest': 'cheapest wear',
+    'median': 'median wear price',
+    'highest': 'priciest wear',
+}
+DEFAULT_VALUATION_RULE = 'lowest'
+
+# The weekly care package lets you claim this many of its four items.
+RECOMMENDED_PICKS = 2
+
+
+def resolve_valuation_rule(raw):
+    """Validate VALUATION_RULE, falling back to the conservative default."""
+    rule = (raw or DEFAULT_VALUATION_RULE).strip().lower()
+    if rule not in VALUATION_RULES:
+        logging.getLogger(__name__).warning(
+            "Unknown VALUATION_RULE %r; using %r. Valid values: %s",
+            raw, DEFAULT_VALUATION_RULE, ', '.join(VALUATION_RULES))
+        return DEFAULT_VALUATION_RULE
+    return rule
+
+
 # The placeholder shipped in .env.EXAMPLE. Anyone who copies that file without
 # editing it would otherwise sign sessions with a key published on GitHub,
 # which lets a visitor forge a cookie for any user_id.
@@ -95,6 +127,7 @@ app.config['MAX_CONTENT_PATH'] = 16 * 1024 * 1024  # 16MB max for form fields
 app.config['DATABASE'] = repo_path(os.environ.get('DATABASE_PATH', 'csgo_items.db'))
 app.config['MODEL_PATH'] = repo_path(os.environ.get('MODEL_PATH', os.path.join('Models', 'BOX_TRAINED.pt')))
 app.config['SESSION_TYPE'] = 'filesystem'
+app.config['VALUATION_RULE'] = resolve_valuation_rule(os.environ.get('VALUATION_RULE'))
 app.config['SESSION_PERMANENT'] = True
 app.config['PERMANENT_SESSION_LIFETIME'] = REMEMBERED_SESSION_LIFETIME
 # Only send the session cookie over HTTPS. This MUST be false when serving
@@ -707,51 +740,97 @@ def _as_price(value):
     return price
 
 
-def annotate_recommendation(item_results):
-    """Tag the highest-value drop so the UI can recommend it.
+def base_item_name(name):
+    """Strip a trailing skin wear, e.g. 'AK-47 | Redline (Field-Tested)' -> 'AK-47 | Redline'.
 
-    README.md:5 and :12 advertise that the app "automatically recommends the
-    highest-value item", and the usage steps at README.md:126 tell the user the
-    recommendation will be highlighted -- but no code ever implemented it. The
-    results page was a flat checkbox list ordered by OCR match score
-    (item_matcher.py:327 sorts on 'score'), which has nothing to do with price.
-
-    For each of the four detected slots we pick the priciest candidate match,
-    then mark the single most valuable slot overall. Both the slot and the
-    winning match get flagged so the template can highlight the exact checkbox
-    rather than just the box it lives in.
-
-    Returns the recommended slot dict, or None when nothing anywhere has a
-    known price (an unpriced database is the common first-run state).
+    Only the five wears are stripped. A graffiti colour such as
+    '(Tiger Orange)' names a different market item, not a wear, and stays.
     """
-    best_slot = None
+    name = name or ''
+    for wear in WEAR_NAMES:
+        suffix = f' ({wear})'
+        if name.endswith(suffix):
+            return name[:-len(suffix)]
+    return name
+
+
+def _pick_by_rule(priced, rule):
+    """The candidate a slot is valued at, from a price-sorted list."""
+    if rule == 'highest':
+        return priced[-1]
+    if rule == 'median':
+        # Lower median, so the value is always a real candidate's price
+        # (statistics.median_low semantics) and it can be pre-selected.
+        return priced[(len(priced) - 1) // 2]
+    return priced[0]
+
+
+def annotate_recommendation(item_results, rule=None, picks=RECOMMENDED_PICKS):
+    """Value each detected slot and flag the most valuable ones to claim.
+
+    The care-package screen names the item but not a skin's wear, so a skin
+    slot matches several items at very different prices. It used to be valued
+    at the priciest candidate in its list -- usually Factory New, and
+    sometimes a *different item* that merely fuzzy-matched the OCR text -- so
+    skins were systematically overvalued against cases and graffiti.
+
+    Now a slot is valued only over its **top match's own wear variants**
+    (same item name once the wear is stripped). `rule` decides which of those
+    prices counts; see VALUATION_RULES. The full min-max range is kept for
+    the template.
+
+    The game lets you claim up to `picks` (2) of the four items, so the
+    `picks` highest-valued slots are recommended, each with the candidate the
+    value came from pre-selected.
+
+    Sets on every slot: `value`, `value_match`, `price_min`, `price_max`,
+    `priced_variants`, `variant_count` and `display_name`; on every match:
+    `price_value`. Recommended slots and their `value_match` also get
+    `recommended = True`, and slots get `pick_rank` (1-based).
+
+    Returns the recommended slots, best first ([] when nothing has a price --
+    the common state of a freshly built database).
+    """
+    rule = rule or app.config.get('VALUATION_RULE', DEFAULT_VALUATION_RULE)
+    valued = []
 
     for result in item_results:
-        best_match = None
-
-        for match in result.get('matches') or []:
-            price = _as_price(match.get('price'))
+        matches = result.get('matches') or []
+        for match in matches:
             # Keep the parsed value so the template can format it without
             # re-parsing, and so unpriced rows stay visually distinct.
-            match['price_value'] = price
-            if price is None:
-                continue
-            if best_match is None or price > best_match['price_value']:
-                best_match = match
+            match['price_value'] = _as_price(match.get('price'))
 
-        result['best_match'] = best_match
-        result['best_price'] = best_match['price_value'] if best_match else None
+        result.update(value=None, value_match=None, price_min=None, price_max=None,
+                      priced_variants=0, variant_count=0, display_name=None)
+        if not matches:
+            continue
 
-        if best_match is not None and (
-            best_slot is None or best_match['price_value'] > best_slot['best_price']
-        ):
-            best_slot = result
+        family_name = base_item_name(matches[0].get('name'))
+        family = [m for m in matches if base_item_name(m.get('name')) == family_name]
+        priced = sorted((m for m in family if m['price_value'] is not None),
+                        key=lambda m: m['price_value'])
 
-    if best_slot is not None:
-        best_slot['recommended'] = True
-        best_slot['best_match']['recommended'] = True
+        result['display_name'] = family_name
+        result['variant_count'] = len(family)
+        result['priced_variants'] = len(priced)
+        if not priced:
+            continue
 
-    return best_slot
+        chosen = _pick_by_rule(priced, rule)
+        result['value_match'] = chosen
+        result['value'] = chosen['price_value']
+        result['price_min'] = priced[0]['price_value']
+        result['price_max'] = priced[-1]['price_value']
+        valued.append(result)
+
+    # sorted() is stable, so equal values keep their on-screen order.
+    ranked = sorted(valued, key=lambda r: r['value'], reverse=True)[:picks]
+    for rank, result in enumerate(ranked, start=1):
+        result['recommended'] = True
+        result['pick_rank'] = rank
+        result['value_match']['recommended'] = True
+    return ranked
 
 
 # Routes
@@ -1004,16 +1083,18 @@ def upload_file():
                 total_value=get_journal_total(get_user_journal(user['id']))
             )
         
-        # Work out which of the four drops is worth the most. This mutates
-        # matched_items in place, tagging the winning slot and match.
-        recommendation = annotate_recommendation(matched_items)
+        # Value each drop and pick the two worth claiming. This mutates
+        # matched_items in place, tagging the winning slots and matches.
+        recommendations = annotate_recommendation(matched_items)
 
         # Return the results
         return render_template(
             'results.html',
             screenshot_id=screenshot_id,
             item_results=matched_items,
-            recommendation=recommendation,
+            recommendations=recommendations,
+            valuation_rule=app.config['VALUATION_RULE'],
+            valuation_label=VALUATION_RULES[app.config['VALUATION_RULE']],
             user=user,
             journal=get_user_journal(user['id']),
             total_value=get_journal_total(get_user_journal(user['id']))

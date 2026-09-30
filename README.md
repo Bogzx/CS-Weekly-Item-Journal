@@ -6,14 +6,14 @@
 ![OpenCV](https://img.shields.io/badge/OpenCV-4.9%2B-red)
 ![Flask](https://img.shields.io/badge/Flask-3.0%2B-lightgrey)
 
-A web application that analyzes your CS2 weekly drop screenshots, identifies items with AI, compares prices, and helps you track your drops over time in a personal journal. The system automatically recommends the highest-value item to select based on current Steam Market prices.
+A web application that analyzes your CS2 weekly drop screenshots, identifies items with AI, compares prices, and helps you track your drops over time in a personal journal. It recommends which two of the four items to claim, based on stored Steam Market prices.
 
 ## 🚀 Features
 
 * **AI-Powered Item Detection** : Custom-trained YOLO model detects weekly drop boxes in screenshots
 * **Automatic Text Recognition** : Advanced OCR pipeline extracts item names from screenshots
 * **Intelligent Item Matching** : Sophisticated fuzzy matching algorithms correctly identify items despite OCR imperfections
-* **Price Comparison** : Automatically determines which item has the highest market value
+* **Price Comparison** : Values each of the four items and recommends the two worth claiming
 * **Real-time Price Tracking** : Automatic Steam Market price monitoring and updates
 * **User Journal System** : Track your drops over time and monitor your total collection value
 * **Drop History & EV** : Per-week charts of value added, cumulative collection value and expected value per drop
@@ -59,7 +59,7 @@ The extracted text is processed through a sophisticated matching system that:
 * Visual results display with confidence indicators
 * Personal journal system for tracking drops
 * Collection value monitoring
-* Recommendation of highest-value items
+* Recommendation of the two most valuable items (the game lets you claim two)
 
 ## 🛠️ Technologies Used
 
@@ -182,9 +182,33 @@ The system uses a SQLite database with the following key tables:
 1. **Register/Login** : Create an account to track your drops over time
 2. **Upload Screenshot** : Take a screenshot of your CS2 weekly drops screen and upload it
 3. **Review Results** : The system identifies items and displays matching candidates with price information
-4. **Select Item** : The highest-priced item is highlighted as the recommended choice and pre-selected
+4. **Select Items** : The two most valuable items are marked Pick 1 / Pick 2 and pre-selected (see [How items are valued](#-how-items-are-valued))
 5. **Add to Journal** : Confirm the correct items to add to your personal journal
 6. **Track Value** : Watch total value and per-drop expected value on the **History** page
+
+## 💲 How items are valued
+
+The care-package screen names each item but does not show a skin's wear, so a
+skin slot matches up to five market items (Factory New … Battle-Scarred) whose
+prices can differ by 100×. The app:
+
+1. values a slot only over its **top match's own wear variants**, never over
+   other items that happened to fuzzy-match the OCR text;
+2. shows the price range (min–max over the priced wears) on each slot;
+3. counts one price from that range according to `VALUATION_RULE` (in `.env`):
+
+   | `VALUATION_RULE` | Slot value | Use it when |
+   |---|---|---|
+   | `lowest` (default) | cheapest wear | you want a floor: a pick is worth at least this |
+   | `median` | middle wear price | you want a typical value |
+   | `highest` | priciest wear (usually Factory New) | the old, optimistic behaviour |
+
+4. recommends the **two** highest-valued slots (the game lets you claim 2 of
+   the 4) and pre-selects the entry the value came from. Change it to the real
+   wear once you have claimed the item, so the journal records the right price.
+
+Cases and graffiti have a single price, so the rule only changes how skins
+compare to them.
 
 ## 🔄 Updating Prices
 
@@ -254,10 +278,6 @@ pytest -q -m "not slow"
   but a full price crawl is ~10 hours because Steam serves 10 items per
   request. A priced database published as a GitHub Release asset would make
   the first run instant.
-* **Skin recommendations assume the best wear.** The care-package screen does
-  not show wear, so each skin is offered in all five wears and the
-  recommendation takes the priciest one. It also recommends one item, while
-  the game lets you claim two.
 * **No login rate limiting or CSRF tokens.** Session cookies are
   `SameSite=Lax`, which blocks cross-site form posts in current browsers, but
   do not expose the app beyond your own machine or LAN.
