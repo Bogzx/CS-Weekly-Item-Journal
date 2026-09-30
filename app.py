@@ -435,48 +435,72 @@ def get_journal_total(journal_items):
     return sum(float(item.get('item_price', 0) or 0) for item in journal_items)
 
 
-def get_journal_history(user_id):
-    """Aggregate a user's journal into a per-week drop history.
+def _parse_timestamp(value):
+    """Parse a SQLite CURRENT_TIMESTAMP string (or a datetime) into a datetime."""
+    if isinstance(value, datetime):
+        return value
+    try:
+        return datetime.fromisoformat(str(value).strip())
+    except ValueError:
+        return None
 
-    CS2 grants one care package per week, so the natural unit for "how am I
-    doing over time" is the ISO-ish week the item was journalled in. Returns
-    buckets oldest-first, each carrying the number of items kept, their total
-    value, the mean value per item that week (the realised expected value of a
-    drop) and the running cumulative total.
+
+def bucket_by_iso_week(rows):
+    """Aggregate (created_at, item_price) rows into ISO-week buckets.
+
+    Weeks used to come from SQLite's strftime('%Y-W%W'), which is not an ISO
+    week: it counts from the year's first Monday, so the days before it fall
+    into a "W00" and one Monday-Sunday week straddling New Year was split into
+    two buckets (2025-W52 and 2026-W00). ISO weeks always run Monday-Sunday
+    and belong to the year that holds their Thursday.
+
+    Returns buckets oldest-first, each with the ISO week label, its Monday,
+    the number of items, their total value, the mean over priced items (the
+    realised expected value of a drop) and the running cumulative total.
     """
-    conn = get_db()
-    rows = conn.execute(
-        """
-        SELECT
-            strftime('%Y-W%W', created_at) AS week,
-            MIN(date(created_at))          AS week_start,
-            COUNT(*)                       AS item_count,
-            COALESCE(SUM(item_price), 0)   AS total_value,
-            AVG(item_price)                AS avg_value
-        FROM user_journals
-        WHERE user_id = ?
-        GROUP BY week
-        ORDER BY week ASC
-        """,
-        (user_id,)
-    ).fetchall()
+    weeks = {}
+    for created_at, price in rows:
+        stamp = _parse_timestamp(created_at)
+        if stamp is None:
+            continue
+        iso_year, iso_week, _ = stamp.isocalendar()
+        bucket = weeks.setdefault((iso_year, iso_week), {'count': 0, 'prices': []})
+        bucket['count'] += 1
+        if price is not None:
+            bucket['prices'].append(float(price))
 
     history = []
     running_total = 0.0
-    for row in rows:
-        total = float(row.get('total_value') or 0)
+    for (iso_year, iso_week) in sorted(weeks):
+        bucket = weeks[(iso_year, iso_week)]
+        total = sum(bucket['prices'])
         running_total += total
         history.append({
-            'week': row.get('week'),
-            'week_start': row.get('week_start'),
-            'item_count': int(row.get('item_count') or 0),
-            # AVG() skips NULLs, so this is the mean over *priced* items only,
-            # which is what you want for an EV figure.
-            'avg_value': float(row.get('avg_value') or 0),
+            'week': f'{iso_year}-W{iso_week:02d}',
+            'week_start': datetime.fromisocalendar(iso_year, iso_week, 1).date().isoformat(),
+            'item_count': bucket['count'],
+            # Mean over *priced* items only, which is what you want for an EV
+            # figure (unpriced items would drag it towards zero).
+            'avg_value': total / len(bucket['prices']) if bucket['prices'] else 0.0,
             'total_value': total,
             'cumulative_value': running_total,
         })
     return history
+
+
+def get_journal_history(user_id):
+    """Aggregate a user's journal into a per-week drop history.
+
+    CS2 grants one care package per week, so the natural unit for "how am I
+    doing over time" is the ISO week the item was journalled in. See
+    bucket_by_iso_week for the bucket fields.
+    """
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT created_at, item_price FROM user_journals WHERE user_id = ?",
+        (user_id,)
+    ).fetchall()
+    return bucket_by_iso_week((row['created_at'], row['item_price']) for row in rows)
 
 
 def summarize_history(history):
