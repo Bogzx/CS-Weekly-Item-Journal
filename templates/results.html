@@ -331,7 +331,8 @@
                     <p class="score">
                         Ranked by the most recent Steam Market price stored for each item. The drop
                         screen does not show a skin's wear (and the scan often misses a graffiti's
-                        colour), so those are valued at their <strong>{{ valuation_label }}</strong> (<code>VALUATION_RULE={{ valuation_rule }}</code>).
+                        colour), so those are valued at the <strong>{{ valuation_label }}</strong> among
+                        their wears or colours (<code>VALUATION_RULE={{ valuation_rule }}</code>).
                         The matching entries are pre-selected below; change them once you know the wear,
                         or untick one if the match looks wrong.
                     </p>
@@ -395,6 +396,8 @@
                             <p class="no-matches">No matching items found in database.</p>
                         {% elif result.status == 'empty' %}
                             <p class="no-matches">Empty or unrecognizable text detected.</p>
+                        {% elif result.status == 'name_missing' %}
+                            <p class="no-matches">Only the item type was read; the name was cut off, so this item cannot be identified or priced.</p>
                         {% endif %}
                     </div>
                     {% endfor %}
