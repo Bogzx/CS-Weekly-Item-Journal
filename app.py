@@ -21,6 +21,7 @@ import json
 import subprocess
 import sys
 import logging
+from urllib.parse import urlparse
 
 # Load variables from .env file
 load_dotenv()
@@ -47,8 +48,29 @@ DEFAULT_PRICE_UPDATE_CONFIG = {
 }
 
 
+# The placeholder shipped in .env.EXAMPLE. Anyone who copies that file without
+# editing it would otherwise sign sessions with a key published on GitHub,
+# which lets a visitor forge a cookie for any user_id.
+PLACEHOLDER_SECRET_PREFIX = 'CHANGE_ME'
+
+
+def resolve_secret_key(raw):
+    """Return a usable session signing key.
+
+    Falls back to a random per-process key (sessions end on restart) when the
+    configured one is missing or is still the .env.EXAMPLE placeholder.
+    """
+    if not raw or raw.startswith(PLACEHOLDER_SECRET_PREFIX):
+        logging.getLogger(__name__).warning(
+            "SECRET_KEY is unset or still the .env.EXAMPLE placeholder; using a "
+            "random key. Logins will not survive a restart. See README 'Configure'."
+        )
+        return os.urandom(24)
+    return raw
+
+
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24))
+app.secret_key = resolve_secret_key(os.environ.get('SECRET_KEY'))
 
 # How long a "remember me" session lasts. Sessions without "remember me" get
 # REMEMBER_ME_OFF_LIFETIME instead (see login()).
@@ -215,6 +237,18 @@ def login_required(f):
             return redirect(url_for('login', next=request.url))
         return f(*args, **kwargs)
     return decorated_function
+
+def is_safe_redirect(target):
+    """True if `target` is a path on this site.
+
+    Checking startswith('/') alone let '//evil.example' and '/\\evil.example'
+    through; browsers treat both as a different host.
+    """
+    if not target or not target.startswith('/') or target.startswith(('//', '/\\')):
+        return False
+    parsed = urlparse(target)
+    return not parsed.scheme and not parsed.netloc
+
 
 def get_current_user():
     """Get current user from session."""
@@ -383,6 +417,77 @@ def process_image(image_path):
     log. upload_file() renders the exception into the results page instead.
     """
     return get_processor().process_image(image_path, save_crops=False)
+
+# MIME subtype of a pasted data: URL -> file extension we save it under.
+PASTED_IMAGE_EXTENSIONS = {
+    'png': 'png',
+    'jpeg': 'jpg',
+    'jpg': 'jpg',
+    'webp': 'webp',
+    'bmp': 'bmp',
+    'gif': 'gif',
+}
+
+
+def decode_pasted_image(image_data):
+    """Split a pasted image into (extension, bytes).
+
+    Accepts a `data:image/<type>;base64,...` URL or bare base64 (assumed PNG).
+    The subtype used to be copied straight from the request into the saved
+    file name, so a crafted header such as `data:image/..\\..\\app.py;base64,`
+    chose the path and extension of the written file on Windows, and bytes PIL
+    could not parse were then written there verbatim. Now the type must be a
+    known image format and the payload must actually decode as an image.
+
+    Raises ValueError for anything else.
+    """
+    import base64
+    import binascii
+    from io import BytesIO
+    from PIL import Image, UnidentifiedImageError
+
+    if not image_data:
+        raise ValueError('no image data received')
+
+    extension = 'png'
+    if image_data.startswith('data:'):
+        header, sep, image_data = image_data.partition(',')
+        match = re.fullmatch(r'data:image/([a-z0-9.+-]+)(;base64)?', header.strip().lower())
+        if not sep or not match or not match.group(2):
+            raise ValueError('expected a base64 data:image URL')
+        subtype = match.group(1)
+        if subtype not in PASTED_IMAGE_EXTENSIONS:
+            raise ValueError(f'unsupported image type {subtype!r}')
+        extension = PASTED_IMAGE_EXTENSIONS[subtype]
+
+    try:
+        binary_data = base64.b64decode(image_data, validate=True)
+    except (binascii.Error, ValueError):
+        raise ValueError('image data is not valid base64')
+
+    try:
+        with Image.open(BytesIO(binary_data)) as img:
+            img.verify()
+    except (UnidentifiedImageError, OSError, SyntaxError) as e:
+        raise ValueError(f'not a readable image ({e.__class__.__name__})')
+
+    return extension, binary_data
+
+
+def save_pasted_image(binary_data, filepath, max_dimension=2048):
+    """Write a decoded pasted image, downscaling very large ones."""
+    from io import BytesIO
+    from PIL import Image
+
+    img = Image.open(BytesIO(binary_data))
+    if img.width > max_dimension or img.height > max_dimension:
+        # Preserve aspect ratio; thumbnail() never upscales.
+        img.thumbnail((max_dimension, max_dimension), Image.LANCZOS)
+        print(f"Resized image to {img.width}x{img.height}")
+    if filepath.endswith('.jpg') and img.mode not in ('RGB', 'L'):
+        img = img.convert('RGB')
+    img.save(filepath, optimize=True, quality=85)
+
 
 def clean_item_name(name):
     """Clean up the detected item name for better database matching."""
@@ -761,7 +866,7 @@ def login():
                 
                 # Redirect to next page if specified, otherwise to index
                 next_page = request.args.get('next')
-                if next_page and next_page.startswith('/'):  # Ensure it's a relative URL
+                if is_safe_redirect(next_page):
                     return redirect(next_page)
                 return redirect(url_for('index'))
         
@@ -854,64 +959,17 @@ def upload_file():
         # Handle pasted image
         elif 'image_data' in request.form and request.form['image_data']:
             try:
-                import base64
-                from io import BytesIO
-                from PIL import Image
-                
-                image_data = request.form['image_data']
-                print(f"Received image data of length: {len(image_data)}")
-                
-                if not image_data:
-                    return jsonify({'error': 'No image data received'}), 400
-                    
-                # Strip the Data URL header if it exists
-                if 'data:image' in image_data:
-                    # Get the image format from the header
-                    image_format = image_data.split(';')[0].split('/')[1]
-                    image_data = image_data.split(',')[1]
-                else:
-                    image_format = 'png'  # Default format
-                
-                # Generate a unique filename for the pasted image
-                filename = f"{screenshot_id}.{image_format}"
-                filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-                
-                # First try to decode and optimize the image before saving
-                try:
-                    # Decode base64 to binary data
-                    binary_data = base64.b64decode(image_data)
-                    
-                    # Open image with PIL
-                    img = Image.open(BytesIO(binary_data))
-                    
-                    # Resize if the image is very large
-                    max_dimension = 2048  # Set a reasonable max dimension
-                    if img.width > max_dimension or img.height > max_dimension:
-                        # Calculate new dimensions while preserving aspect ratio
-                        if img.width > img.height:
-                            new_width = max_dimension
-                            new_height = int(img.height * (max_dimension / img.width))
-                        else:
-                            new_height = max_dimension
-                            new_width = int(img.width * (max_dimension / img.height))
-                            
-                        img = img.resize((new_width, new_height), Image.LANCZOS)
-                        print(f"Resized image to {new_width}x{new_height}")
-                    
-                    # Save the optimized image
-                    img.save(filepath, optimize=True, quality=85)
-                    print(f"Saved optimized pasted image to {filepath}")
-                    
-                except Exception as img_error:
-                    print(f"Error optimizing image: {img_error}, falling back to direct save")
-                    # Fall back to direct save if optimization fails
-                    with open(filepath, 'wb') as f:
-                        f.write(binary_data)
-                    print(f"Saved pasted image to {filepath}")
-            
-            except Exception as paste_error:
-                print(f"Error processing pasted image: {paste_error}")
-                return jsonify({'error': f'Error processing pasted image: {str(paste_error)}'}), 400
+                extension, binary_data = decode_pasted_image(request.form['image_data'])
+            except ValueError as paste_error:
+                print(f"Rejected pasted image: {paste_error}")
+                return jsonify({'error': f'Error processing pasted image: {paste_error}'}), 400
+
+            # The extension comes from PASTED_IMAGE_EXTENSIONS, never from the
+            # request, so the path cannot escape UPLOAD_FOLDER.
+            filename = f"{screenshot_id}.{extension}"
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            save_pasted_image(binary_data, filepath)
+            print(f"Saved pasted image to {filepath}")
         else:
             print("Neither file nor image data found in the request")
             return jsonify({'error': 'No file or image data provided'}), 400
