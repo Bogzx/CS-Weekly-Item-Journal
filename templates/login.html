@@ -110,6 +110,7 @@
         {% endwith %}
         
         <form method="post" action="{{ url_for('login') }}">
+            {{ csrf_field() }}
             <div class="form-group">
                 <label for="username">Username</label>
                 <input type="text" id="username" name="username" required>

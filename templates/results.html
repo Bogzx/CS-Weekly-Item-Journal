@@ -350,6 +350,7 @@
                 <p>Select up to 2 items to add to your journal:</p>
 
                 <form action="{{ url_for('add_to_journal') }}" method="post" id="addItemsForm">
+                    {{ csrf_field() }}
                     <input type="hidden" name="screenshot_id" value="{{ screenshot_id }}">
 
                     {% for result in item_results %}
@@ -429,6 +430,7 @@
                         <p>${{ item.item_price }}</p>
                         {% endif %}
                         <form action="{{ url_for('remove_from_journal') }}" method="post">
+                            {{ csrf_field() }}
                             <input type="hidden" name="journal_id" value="{{ item.id }}">
                             <button type="submit" class="remove-btn" title="Remove from journal">×</button>
                         </form>

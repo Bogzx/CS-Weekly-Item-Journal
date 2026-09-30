@@ -36,9 +36,28 @@ def appmod():
     return app
 
 
+def _csrf_client_class(appmod):
+    """A test client that adds this session's CSRF token to form POSTs, the
+    way a browser submitting a rendered form would. Pass csrf=False to send a
+    POST without it."""
+    from flask.testing import FlaskClient
+
+    class CsrfClient(FlaskClient):
+        def post(self, *args, csrf=True, **kwargs):
+            data = kwargs.get('data')
+            if csrf and isinstance(data, dict) and appmod.CSRF_FIELD not in data:
+                with self.session_transaction() as sess:
+                    token = sess.setdefault(appmod.CSRF_SESSION_KEY, 'test-csrf-token')
+                kwargs['data'] = {**data, appmod.CSRF_FIELD: token}
+            return super().post(*args, **kwargs)
+
+    return CsrfClient
+
+
 @pytest.fixture
 def client(appmod):
     appmod.app.config['TESTING'] = True
+    appmod.app.test_client_class = _csrf_client_class(appmod)
     with appmod.app.test_client() as client:
         yield client
 

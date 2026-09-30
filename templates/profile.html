@@ -224,6 +224,7 @@
                 <div class="journal-header">
                     <h2>Your Journal History</h2>
                     <form action="{{ url_for('clear_journal') }}" method="post" onsubmit="return confirm('Are you sure you want to clear your entire journal?');">
+                        {{ csrf_field() }}
                         <button type="submit" class="btn btn-outline">Clear Journal</button>
                     </form>
                 </div>
@@ -245,6 +246,7 @@
                             </div>
                         </div>
                         <form action="{{ url_for('remove_from_journal') }}" method="post">
+                            {{ csrf_field() }}
                             <input type="hidden" name="journal_id" value="{{ item.id }}">
                             <button type="submit" class="remove-btn" title="Remove from journal">×</button>
                         </form>
