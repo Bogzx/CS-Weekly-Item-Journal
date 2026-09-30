@@ -1,0 +1,52 @@
+[
+ {
+  "id": "crate-1210",
+  "name": "Gift Package",
+  "rarity": {
+   "id": "rarity_common",
+   "name": "Base Grade"
+  },
+  "market_hash_name": "Gift Package",
+  "type": null
+ },
+ {
+  "id": "crate-4880",
+  "name": "Revolution Case",
+  "rarity": {
+   "id": "rarity_common",
+   "name": "Base Grade"
+  },
+  "market_hash_name": "Revolution Case",
+  "type": "Case"
+ },
+ {
+  "id": "crate-4904",
+  "name": "Kilowatt Case",
+  "rarity": {
+   "id": "rarity_common",
+   "name": "Base Grade"
+  },
+  "market_hash_name": "Kilowatt Case",
+  "type": "Case"
+ },
+ {
+  "id": "crate-4007",
+  "name": "Sticker Capsule",
+  "rarity": {
+   "id": "rarity_common",
+   "name": "Base Grade"
+  },
+  "market_hash_name": "Sticker Capsule",
+  "type": "Sticker Capsule"
+ },
+ {
+  "id": "crate-4006",
+  "name": "DreamHack 2013 Souvenir Package",
+  "rarity": {
+   "id": "rarity_common",
+   "name": "Base Grade"
+  },
+  "market_hash_name": "DreamHack 2013 Souvenir Package",
+  "type": "Souvenir"
+ }
+]

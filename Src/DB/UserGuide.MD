@@ -5,9 +5,7 @@ This document explains how to use the provided scripts to create and maintain a 
 ## System Requirements
 
 * Python 3.11, 3.12 or 3.13
-* Node.js 18 or higher (for creating CS skins data)
-* Required Python packages: `sqlite3`, `requests`
-* Required Node.js packages: `node-html-parser` (for `create_cs_skins.js`)
+* Required Python packages: `requests` (`sqlite3` ships with Python)
 
 ## Quick Start
 
@@ -21,16 +19,13 @@ Here's the typical workflow to set up and use the database:
 # 1. Create the database structure
 python Src/DB/create_database.py
 
-# 2. Generate CS:GO skins data
-node Src/DB/create_cs_skins.js
+# 2. Download the skin, case and graffiti lists
+python Src/DB/fetch_item_lists.py
 
-# 3. Generate CS:GO cases data
-python Src/DB/create_cases.py
-
-# 4. Populate the database with items
+# 3. Populate the database with items
 python Src/DB/populate_database.py
 
-# 5. Update item prices.
+# 4. Update item prices.
 #    Prefer bulk_scraper: it fetches a page of items per Steam request
 #    (Steam currently caps pages at 10), so the full market is ~3,500
 #    requests / ~10 hours at the 10 s delay. update_price.py sleeps 15 s
@@ -40,7 +35,7 @@ python Src/DB/bulk_scraper.py  # For bulk updates (use this)
 # OR
 python Src/DB/update_price.py  # One item at a time (very slow)
 
-# 6. Verify database contents
+# 5. Verify database contents
 python Src/DB/verify_database.py
 ```
 
@@ -61,38 +56,40 @@ This will:
 * If a database already exists with this name it is left untouched. Pass
   `--force` to rebuild the item tables; user accounts and journals are kept
 
-### 2. Generating CS:GO Skins Data
-
-Next, you need to generate a CSV file with CS:GO skins data.
+### 2. Downloading the Item Lists
 
 ```bash
-npm install                    # once, installs node-html-parser
-node Src/DB/create_cs_skins.js
+python Src/DB/fetch_item_lists.py
 ```
 
-> As of 2026-09-30 counterstrike.fandom.com answers this script with HTTP
-> 403, so the step fails (exit 1) and no CSV is written. There is currently
-> no working source for the skin list in this repo.
+This downloads `skins.json`, `crates.json` and `graffiti.json` from
+[ByMykel/CSGO-API](https://github.com/ByMykel/CSGO-API) (MIT License, an
+export of the CS2 game files kept up to date by its maintainer) and writes:
 
-This will:
+* `cs_skins.csv`: Collection, Weapon, Skin, Quality, Steam Market API URL and
+  `Wears`, the wears the skin actually exists in (a quarter of all skins do
+  not come in all five)
+* `cs_cases.csv`: every marketable weapon case
+* `cs_graffiti.csv`: every marketable sealed graffiti, one row per colour
 
-* Scrape CS2 skins data from the counterstrike.fandom.com Skins/List page
-* Generate a `cs_skins.csv` file with columns for Collection, Weapon, Skin, Quality, and Steam Market API URL
+Options:
 
-### 3. Generating CS:GO Cases Data
+* `--ref <branch|tag|commit>`: download a specific snapshot instead of `main`
+* `--source-dir DIR`: read the three JSON files from a local directory (offline)
+* `--out-dir DIR`: where to write the CSVs (default: current directory)
+* `--include-knives-and-gloves`: also list ★ items. They are skipped by
+  default because the weekly drop never offers them and their finish names
+  collide with ordinary skins in fuzzy matching.
 
-You also need to generate a CSV file with CS:GO cases data.
+If a download fails or a list comes back empty, the script exits with status 1
+and leaves any existing CSVs untouched.
 
-```bash
-python Src/DB/create_cases.py
-```
+> The previous source, `create_cs_skins.js` (a scraper for the
+> counterstrike.fandom.com skin list), was removed after the wiki started
+> answering it with HTTP 403. `create_cases.py`, which derived the case list
+> from that CSV, went with it.
 
-This will:
-
-* Extract case names from the CS:GO skins data
-* Generate a `cs_cases.csv` file with case names and their Steam Market API URLs
-
-### 4. Populating the Database
+### 3. Populating the Database
 
 Now you can populate the database with items from the CSV files.
 
@@ -105,16 +102,18 @@ Options:
 * `--db path/to/db.db`: Specify a custom database path
 * `--skins path/to/skins.csv`: Specify a custom skins CSV file
 * `--cases path/to/cases.csv`: Specify a custom cases CSV file
+* `--graffiti path/to/graffiti.csv`: Specify a custom graffiti CSV file
 * `--collections "Collection1" "Collection2"`: Only add items from specific collections
 * `--cases-only`: Only add cases (skip skins)
 * `--skins-only`: Only add skins (skip cases)
 * `--list-collections`: Show available collections without adding anything
 * `--debug`: Show additional debugging information
-* `--no-quality-variants`: Don't create multiple wear quality variants
 
-By default, the script creates 5 variants of each skin (Factory New, Minimal Wear, Field-Tested, Well-Worn, Battle-Scarred).
+Each skin gets one row per wear listed in its `Wears` column. A skins CSV
+without that column (the old wiki format) gets all five wears. Re-running the
+script is safe: existing rows are kept, so prices are not lost.
 
-### 5. Updating Item Prices
+### 4. Updating Item Prices
 
 You have two options for updating item prices:
 
@@ -152,7 +151,7 @@ Options:
 
 The bulk updater is much faster as it fetches many items at once rather than one by one.
 
-### 6. Verifying the Database
+### 5. Verifying the Database
 
 To check the contents of your database:
 
@@ -173,8 +172,8 @@ This will display:
 ### Adding New Cases or Collections
 
 ```bash
-# Update your CSV files with new data
-python Src/DB/create_cases.py
+# Refresh the CSV files from the item source
+python Src/DB/fetch_item_lists.py
 
 # Add only the new collections to the database
 python Src/DB/populate_database.py --collections "New Collection Name"
@@ -184,10 +183,10 @@ python Src/DB/populate_database.py --collections "New Collection Name"
 
 ```bash
 # Using individual updater
-python Src/DB/update_price.py --collections "Clutch Case" "Chroma Case"
+python Src/DB/update_price.py --collections "Clutch Case" "The Clutch Collection"
 
 # Using bulk updater (faster)
-python Src/DB/bulk_scraper.py --collections "Clutch Case" "Chroma Case"
+python Src/DB/bulk_scraper.py --collections "Clutch Case" "The Clutch Collection"
 ```
 
 ### Finding the Most Valuable Items
@@ -237,7 +236,8 @@ python Src/DB/bulk_scraper.py --help
 python Src/DB/create_database.py --db my_custom_db.db
 
 # Use custom paths for everything
-python Src/DB/populate_database.py --db my_custom_db.db --skins my_skins.csv --cases my_cases.csv
+python Src/DB/fetch_item_lists.py --out-dir data/
+python Src/DB/populate_database.py --db my_custom_db.db --skins data/cs_skins.csv --cases data/cs_cases.csv --graffiti data/cs_graffiti.csv
 ```
 
 ### Filtering by Item Type and Quality

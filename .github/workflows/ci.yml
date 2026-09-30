@@ -59,23 +59,6 @@ jobs:
           SECRET_KEY: ci-not-a-real-key
         run: pytest -q -m "not slow"
 
-  # create_cs_skins.js is the only Node code. This proves `npm ci` resolves
-  # its dependency and that the parser still extracts skins from wiki markup.
-  node-scraper:
-    name: Node skin scraper
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: npm
-
-      - run: npm ci
-      - run: node --check Src/DB/create_cs_skins.js
-      - run: npm test
-
   # The golden-image regression: runs the real YOLO + EasyOCR pipeline against a
   # committed screenshot. Kept to a single interpreter because the first run
   # downloads ~100 MB of EasyOCR weights.

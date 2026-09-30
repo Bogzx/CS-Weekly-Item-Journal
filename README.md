@@ -80,8 +80,6 @@ The extracted text is processed through a sophisticated matching system that:
 * **Python 3.11, 3.12 or 3.13.** The pipeline needs `ultralytics >= 8.3.94` to
   load the bundled YOLO11 weights, and `numpy >= 1.26` to install at all on
   3.12+.
-* **Node.js 18+** — only for `create_cs_skins.js`, which scrapes the skin list
-  (`npm install` once to get its parser).
 * A GPU is **not** required. Detection runs on four small crops per screenshot
   and is fast enough on CPU.
 
@@ -119,36 +117,38 @@ one. Everything else has a working default.
 
 ### Build the item database
 
-> **Heads up — currently blocked.** `create_cs_skins.js` scrapes the
-> counterstrike.fandom.com skin list, and as of 2026-09-30 the wiki answers it
-> with HTTP 403, so step 2 fails and a new install cannot build the item list.
-> Even when it works, a full price crawl is ~3,500 Steam requests (about 10
-> hours). See [Known gaps](#-known-gaps) — a prebuilt `csgo_items.db` shipped
-> as a Release asset would remove this whole section.
+The item list comes from [ByMykel/CSGO-API](https://github.com/ByMykel/CSGO-API),
+an MIT-licensed JSON export of the CS2 game files: three downloads from
+raw.githubusercontent.com, no Steam requests and no Node.js. Prices come from
+the Steam Market and take longer (see below).
 
-All database scripts live in `Src/DB/`:
+All database scripts live in `Src/DB/` and are run from the repository root:
 
 ```bash
-# Create the empty schema. Refuses to touch an existing database; use
-# --force to rebuild only the item tables (accounts and journals are kept).
+# 1. Create the empty schema. Refuses to touch an existing database; use
+#    --force to rebuild only the item tables (accounts and journals are kept).
 python Src/DB/create_database.py
 
-# Generate the CS2 skin list (Node)
-npm install
-node Src/DB/create_cs_skins.js
+# 2. Download the skin, case and graffiti lists (a few seconds) and write
+#    cs_skins.csv, cs_cases.csv and cs_graffiti.csv. Pin a snapshot with
+#    --ref <commit>; add --include-knives-and-gloves if you want ★ items too.
+python Src/DB/fetch_item_lists.py
 
-# Generate the CS2 case list
-python Src/DB/create_cases.py
-
-# Populate the database from the generated data
+# 3. Load them into the database (~6,800 skin/wear rows, 42 cases, ~1,800 graffiti)
 python Src/DB/populate_database.py
 
-# Fetch prices. bulk_scraper pulls a page of items per request -- prefer it.
+# 4. Fetch prices. bulk_scraper pulls a page of items per request -- prefer it.
+#    A full crawl is ~3,500 requests (~10 hours); see "Updating Prices".
 python Src/DB/bulk_scraper.py
-
-# Optional: add graffiti
-python Src/DB/graffiti_scraper.py
 ```
+
+Steps 1–3 take seconds and are covered by an offline test
+(`tests/test_item_db_build.py`). Until step 4 has run, uploads work but show
+"no price data" and make no recommendation.
+
+Knives and gloves are left out by default: the weekly drop never offers them,
+and they share finish names with ordinary skins ("★ Butterfly Knife | Forest
+DDPAT"), so they only add wrong match candidates and thousands of rows to price.
 
 ### Run
 
@@ -203,7 +203,7 @@ python Src/DB/bulk_scraper.py --type case
 python Src/DB/bulk_scraper.py --query "Revolution Case"
 
 # Only write prices for specific collections (Steam is still crawled in full)
-python Src/DB/bulk_scraper.py --collections "Clutch Case" "Chroma Case"
+python Src/DB/bulk_scraper.py --collections "Clutch Case" "The Clutch Collection"
 
 # Cap the number of market items fetched
 python Src/DB/bulk_scraper.py --max 5000
@@ -228,10 +228,6 @@ python Src/DB/verify_database.py
 ```bash
 pip install pytest
 pytest -q
-
-# The Node skin-scraper parser
-npm install
-npm test
 ```
 
 `tests/test_golden_image.py` runs the real detection + OCR pipeline against a
@@ -254,10 +250,10 @@ pytest -q -m "not slow"
   longer exists. `Models/BOX_TRAINED.pt` (mAP50
   0.995) is therefore irreplaceable. Re-labelling is an owner task — see the
   pull request description for concrete steps.
-* **No prebuilt `csgo_items.db` ships, and the skin-list source is blocked.**
-  counterstrike.fandom.com returns 403 to `create_cs_skins.js`, so a new user
-  cannot build the item database at all. Publishing a prebuilt database as a
-  GitHub Release asset is the single biggest adoption unlock.
+* **No prebuilt `csgo_items.db` ships.** The item list builds in seconds,
+  but a full price crawl is ~10 hours because Steam serves 10 items per
+  request. A priced database published as a GitHub Release asset would make
+  the first run instant.
 * **Skin recommendations assume the best wear.** The care-package screen does
   not show wear, so each skin is offered in all five wears and the
   recommendation takes the priciest one. It also recommends one item, while
