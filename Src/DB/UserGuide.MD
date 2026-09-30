@@ -31,10 +31,12 @@ python Src/DB/create_cases.py
 python Src/DB/populate_database.py
 
 # 5. Update item prices.
-#    Prefer bulk_scraper: it fetches 100 items per Steam request.
-#    update_price.py sleeps 15 s before EVERY item, so a full refresh of a
-#    20k-row database takes over three days. Use it only for a few items.
-python Src/DB/bulk_scraper.py  # For bulk updates (fast -- use this)
+#    Prefer bulk_scraper: it fetches a page of items per Steam request
+#    (Steam currently caps pages at 10), so the full market is ~3,500
+#    requests / ~10 hours at the 10 s delay. update_price.py sleeps 15 s
+#    before EVERY item, so a full refresh of a 20k-row database takes over
+#    three days. Use it only for a few items.
+python Src/DB/bulk_scraper.py  # For bulk updates (use this)
 # OR
 python Src/DB/update_price.py  # One item at a time (very slow)
 
@@ -64,12 +66,17 @@ This will:
 Next, you need to generate a CSV file with CS:GO skins data.
 
 ```bash
+npm install                    # once, installs node-html-parser
 node Src/DB/create_cs_skins.js
 ```
 
+> As of 2026-09-30 counterstrike.fandom.com answers this script with HTTP
+> 403, so the step fails (exit 1) and no CSV is written. There is currently
+> no working source for the skin list in this repo.
+
 This will:
 
-* Scrape CS:GO skins data from online sources
+* Scrape CS2 skins data from the counterstrike.fandom.com Skins/List page
 * Generate a `cs_skins.csv` file with columns for Collection, Weapon, Skin, Quality, and Steam Market API URL
 
 ### 3. Generating CS:GO Cases Data
@@ -135,7 +142,7 @@ Options:
 * `--db path/to/db.db`: Specify a custom database path
 * `--collections "Collection1" "Collection2"`: Only update items from specific collections
 * `--max 1000`: Maximum number of items to fetch from Steam
-* `--batch-size 100`: Number of items per API request
+* `--batch-size 100`: Items requested per API call (Steam currently returns at most 10)
 * `--type rifle`: Filter by item type (rifle, pistol, knife, container, sticker)
 * `--quality stattrak`: Filter by quality (normal, stattrak, souvenir)
 * `--weapon ak47`: Filter by specific weapon (ak47, awp, m4a4)
@@ -197,9 +204,11 @@ sqlite3 csgo_items.db "SELECT name, price FROM items WHERE price IS NOT NULL ORD
 
 If you encounter rate limiting from Steam:
 
-* Increase the delay between requests (`--delay` parameter in the relevant scripts)
-* Use smaller batch sizes (`--batch-size` parameter in bulk_scraper.py)
-* Try updating fewer items at a time (`--max` parameter)
+* bulk_scraper.py backs off automatically (60 s, then 120 s, honouring any
+  `Retry-After`). If Steam keeps refusing it stops, saves the prices it already
+  fetched and exits with status 1 -- wait before running it again
+* Try updating fewer items at a time (`--max`, or filters such as `--type case`)
+* `--batch-size` does not help: Steam returns at most 10 items per request
 
 ### Database Errors
 
