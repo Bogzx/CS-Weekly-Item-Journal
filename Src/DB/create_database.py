@@ -8,6 +8,17 @@ import sys
 ITEM_TABLES = ("items", "collections", "test_table")
 
 
+def has_item_table(db_path):
+    """True if the database at db_path already has an `items` table."""
+    conn = sqlite3.connect(db_path)
+    try:
+        return conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='items'"
+        ).fetchone() is not None
+    finally:
+        conn.close()
+
+
 def create_csgo_database(db_path="csgo_items.db", force=False):
     """
     Create the item tables in a SQLite database.
@@ -18,15 +29,18 @@ def create_csgo_database(db_path="csgo_items.db", force=False):
     
     Returns:
     - bool: True if the tables were created, False if the database already
-      existed and force was not given
+      had item tables and force was not given
     """
     # This used to os.remove() any existing file. app.py stores user accounts
     # and journals in the same database, so re-running the first setup step
     # silently deleted every user and their whole drop history.
-    if os.path.exists(db_path) and not force:
+    if os.path.exists(db_path) and not force and has_item_table(db_path):
         print(f"{db_path} already exists. Re-run with --force to rebuild the item "
               f"tables; user accounts and journals are kept.")
         return False
+    # A database without an item table is one app.py created on its first
+    # start (users and journals only). Adding the item tables to it loses
+    # nothing, so that needs no --force.
     
     # Connect to database (creates it if it doesn't exist)
     conn = sqlite3.connect(db_path)
