@@ -157,3 +157,95 @@ class TestTrustedProxies:
 
         assert locked.status_code == 429
         assert other.status_code == 200
+
+
+class TestThrottleBypasses:
+    def test_begin_attempt_counts_before_the_password_check(self, appmod):
+        throttle, _ = make(appmod)
+        assert [throttle.begin_attempt('ip', 'victim') for _ in range(4)] == [0, 0, 0, 60]
+        # A refused attempt is not recorded, so the lock does not extend itself.
+        assert len(throttle._failures['ip']) == 3
+
+    def test_success_clears_only_that_username(self, appmod):
+        throttle, _ = make(appmod)
+        throttle.begin_attempt('ip', 'victim')
+        throttle.begin_attempt('ip', 'victim')
+        throttle.begin_attempt('ip', 'attacker')
+
+        throttle.succeeded('ip', 'attacker')
+
+        assert [u for _, u in throttle._failures['ip']] == ['victim', 'victim']
+        throttle.begin_attempt('ip', 'victim')
+        assert throttle.retry_after('ip') == 60
+
+    def test_own_account_login_does_not_reset_guesses_at_another(self, appmod, client):
+        """Guess max-1 times, log in as yourself, repeat: used to be unlimited."""
+        victim, attacker = (f'user_{uuid.uuid4().hex[:8]}' for _ in range(2))
+        register(client, victim)
+        register(client, attacker)
+        codes = []
+        for _ in range(3):
+            for _ in range(appmod.login_throttle.max_failures - 1):
+                codes.append(client.post('/login', data={'username': victim, 'password': 'guess'}).status_code)
+            client.post('/login', data={'username': attacker, 'password': 'pw-123456'})
+            client.post('/logout', data={})
+
+        assert codes.count(200) == appmod.login_throttle.max_failures
+        assert 429 in codes
+
+    def test_parallel_guesses_cannot_outrun_the_count(self, appmod, client, monkeypatch):
+        """Every request used to pass the lock check while the slow password
+        hash of the others was still running, so a burst of N guesses got N
+        tries instead of max_failures."""
+        import threading
+        import time
+
+        name = f'user_{uuid.uuid4().hex[:8]}'
+        register(client, name)
+
+        def slow_check(pw_hash, password):
+            time.sleep(0.2)
+            return False
+
+        monkeypatch.setattr(appmod, 'check_password_hash', slow_check)
+        codes = []
+
+        def guess():
+            with appmod.app.test_client() as c:
+                codes.append(c.post('/login', data={'username': name, 'password': 'x'}).status_code)
+
+        threads = [threading.Thread(target=guess) for _ in range(12)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert codes.count(200) == appmod.login_throttle.max_failures
+        assert codes.count(429) == 12 - appmod.login_throttle.max_failures
+
+
+class TestThrottleKey:
+    def test_ipv4_is_its_own_key(self, appmod):
+        assert appmod.throttle_key('203.0.113.7') == '203.0.113.7'
+
+    def test_ipv6_is_grouped_by_64(self, appmod):
+        assert (appmod.throttle_key('2001:db8:1:2::1')
+                == appmod.throttle_key('2001:db8:1:2:ffff:ffff:ffff:ffff')
+                == '2001:db8:1:2::/64')
+        assert appmod.throttle_key('2001:db8:1:3::1') != appmod.throttle_key('2001:db8:1:2::1')
+
+    def test_ipv4_mapped_ipv6_is_the_ipv4_address(self, appmod):
+        assert appmod.throttle_key('::ffff:203.0.113.7') == '203.0.113.7'
+
+    def test_missing_or_odd_address(self, appmod):
+        assert appmod.throttle_key(None) == 'unknown'
+        assert appmod.throttle_key('not-an-ip') == 'not-an-ip'
+
+    def test_rotating_ipv6_addresses_in_one_64_share_a_lock(self, appmod, client):
+        name = f'user_{uuid.uuid4().hex[:8]}'
+        register(client, name)
+        codes = [client.post('/login', data={'username': name, 'password': 'wrong'},
+                             environ_base={'REMOTE_ADDR': f'2001:db8::{i + 1:x}'}).status_code
+                 for i in range(appmod.login_throttle.max_failures + 1)]
+
+        assert codes[-1] == 429
