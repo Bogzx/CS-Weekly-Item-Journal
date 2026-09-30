@@ -1,9 +1,101 @@
 const https = require("https");
 const parser = require("node-html-parser");
 const fs = require("fs");
-const { URLSearchParams } = require("url");
 
-getSite();
+const OUTPUT_FILE = "cs_skins.csv";
+
+if (require.main === module) {
+    getSite();
+}
+
+/**
+ * Extract skins from the wiki's Skins/List page.
+ *
+ * Collections are the <h4> headings and each .wikitable that follows is that
+ * collection's skins, so the two lists are paired by index.
+ */
+function parseSkins(html) {
+    let root = parser.parse(html);
+    let skins = [];
+
+    let collectionNames = [];
+    root.querySelectorAll("h4").forEach(el => {
+        if (el.querySelector('a') && el.querySelector('a').childNodes[0]) {
+            collectionNames.push(el.querySelector('a').childNodes[0].rawText);
+        }
+    });
+
+    console.log(`Found ${collectionNames.length} collections`);
+    let k = 0;
+
+    root.querySelectorAll(".wikitable").forEach(table => {
+        table.querySelectorAll('tr').forEach((row, idx) => {
+            if (idx === 0) {
+                return;
+            }
+
+            try {
+                let skin = {};
+
+                if (k < collectionNames.length) {
+                    skin.collection = collectionNames[k];
+                } else {
+                    skin.collection = "Unknown Collection";
+                }
+
+                if (row.querySelector('a') && row.querySelector('a').childNodes[0]) {
+                    skin.weapon = row.querySelector('a').childNodes[0].rawText;
+                }
+
+                if (row.querySelectorAll('span')[0] && row.querySelectorAll('span')[0].childNodes[0]) {
+                    skin.skin = row.querySelectorAll('span')[0].childNodes[0].rawText;
+                }
+
+                if (row.querySelectorAll('span')[1] && row.querySelectorAll('span')[1].childNodes[0]) {
+                    skin.quality = row.querySelectorAll('span')[1].childNodes[0].rawText;
+                }
+
+                // Price URL for one wear; populate_database.py rewrites it per wear
+                if (skin.weapon && skin.skin) {
+                    const marketName = `${skin.weapon} | ${skin.skin} (Minimal Wear)`;
+                    const encodedName = encodeURIComponent(marketName);
+                    skin.marketUrl = `https://steamcommunity.com/market/priceoverview/?appid=730&market_hash_name=${encodedName}`;
+                } else {
+                    skin.marketUrl = "";
+                }
+
+                skins.push(skin);
+            } catch (rowError) {
+                console.error("Error processing row:", rowError);
+            }
+        });
+
+        k++;
+    });
+
+    return skins;
+}
+
+/** Quote a CSV field, doubling any embedded quotes. */
+function csvField(value) {
+    return `"${String(value || '').replace(/"/g, '""')}"`;
+}
+
+function toCsv(skins) {
+    const csvHeader = "Collection,Weapon,Skin,Quality,Steam Market API URL\n";
+    const csvRows = skins.map(skin =>
+        [skin.collection, skin.weapon, skin.skin, skin.quality, skin.marketUrl].map(csvField).join(",")
+    ).join("\n");
+    return csvHeader + csvRows;
+}
+
+function fail(message) {
+    // Leave any existing cs_skins.csv alone and exit non-zero. This used to
+    // parse whatever came back -- including a 403 challenge page -- find 0
+    // skins, overwrite the CSV with just a header and report success.
+    console.error(message);
+    process.exitCode = 1;
+}
 
 function getSite() {
     console.log("Fetching site...");
@@ -17,7 +109,6 @@ function getSite() {
     }
 
     let response = "";
-    let skins = [];
 
     let req = https.request(options, (res) => {
         res.on('data', d => {
@@ -25,133 +116,57 @@ function getSite() {
         });
 
         res.on('end', () => {
-            try {
-                let root = parser.parse(response);
-                console.log("HTML parsed successfully");
-                
-                let collectionNames = [];
-                root.querySelectorAll("h4").forEach(el => {
-                    if (el.querySelector('a') && el.querySelector('a').childNodes[0]) {
-                        collectionNames.push(el.querySelector('a').childNodes[0].rawText);
-                    }
-                });
-
-                console.log(`Found ${collectionNames.length} collections`);
-                let k = 0;
-
-                root.querySelectorAll(".wikitable").forEach(table => {
-                    table.querySelectorAll('tr').forEach((row, idx) => {
-                        if (idx === 0) {
-                            return;
-                        }
-
-                        try {
-                            let skin = {};
-                            
-                            if (k < collectionNames.length) {
-                                skin.collection = collectionNames[k];
-                            } else {
-                                skin.collection = "Unknown Collection";
-                            }
-                            
-                            if (row.querySelector('a') && row.querySelector('a').childNodes[0]) {
-                                skin.weapon = row.querySelector('a').childNodes[0].rawText;
-                            }
-                            
-                            if (row.querySelectorAll('span')[0] && row.querySelectorAll('span')[0].childNodes[0]) {
-                                skin.skin = row.querySelectorAll('span')[0].childNodes[0].rawText;
-                            }
-                            
-                            if (row.querySelectorAll('span')[1] && row.querySelectorAll('span')[1].childNodes[0]) {
-                                skin.quality = row.querySelectorAll('span')[1].childNodes[0].rawText;
-                            }
-                            
-                            // Generate Steam Market API URL for price data - using Factory New quality
-                            if (skin.weapon && skin.skin) {
-                                const marketName = `${skin.weapon} | ${skin.skin} (Minimal Wear)`;
-                                const encodedName = encodeURIComponent(marketName);
-                                skin.marketUrl = `https://steamcommunity.com/market/priceoverview/?appid=730&market_hash_name=${encodedName}`;
-                            } else {
-                                skin.marketUrl = "";
-                            }
-
-                            skins.push(skin);
-                        } catch (rowError) {
-                            console.error("Error processing row:", rowError);
-                        }
-                    });
-
-                    k++;
-                });
-                
-                console.log(`Scraped ${skins.length} skins`);
-                
-                // Save to file
-                const jsonData = JSON.stringify(skins, null, 2); // Pretty print with 2 spaces
-                /*fs.writeFile("cs_skins.json", jsonData, (err) => {
-                    if (err) {
-                        console.error("Error writing file:", err);
-                    } else {
-                        console.log("Successfully saved skins data to cs_skins.json");
-                    }
-                });*/
-                
-                // Also save as CSV
-                const csvHeader = "Collection,Weapon,Skin,Quality,Steam Market API URL\n";
-                const csvRows = skins.map(skin => 
-                    `"${skin.collection || ''}","${skin.weapon || ''}","${skin.skin || ''}","${skin.quality || ''}","${skin.marketUrl || ''}"`
-                ).join("\n");
-                
-                fs.writeFile("cs_skins.csv", csvHeader + csvRows, (err) => {
-                    if (err) {
-                        console.error("Error writing CSV file:", err);
-                    } else {
-                        console.log("Successfully saved skins data to cs_skins.csv");
-                    }
-                });
-                
-            } catch (error) {
-                console.error("Error parsing or processing data:", error);
+            if (res.statusCode !== 200) {
+                return fail(`Wiki returned HTTP ${res.statusCode}; not writing ${OUTPUT_FILE}.`);
             }
+
+            let skins;
+            try {
+                skins = parseSkins(response);
+            } catch (error) {
+                return fail(`Error parsing or processing data: ${error}`);
+            }
+
+            console.log(`Scraped ${skins.length} skins`);
+            if (skins.length === 0) {
+                return fail(`No skins found; the page layout may have changed. Not writing ${OUTPUT_FILE}.`);
+            }
+
+            fs.writeFile(OUTPUT_FILE, toCsv(skins), (err) => {
+                if (err) {
+                    fail(`Error writing CSV file: ${err}`);
+                } else {
+                    console.log(`Successfully saved skins data to ${OUTPUT_FILE}`);
+                }
+            });
         });
     });
 
     req.on('error', (error) => {
-        console.error("Error making request:", error);
+        fail(`Error making request: ${error}`);
     });
 
     req.end();
 }
 
+module.exports = { parseSkins, toCsv, csvField };
+
 /**
  * create_cs_skins.js
- * 
+ *
  * Description:
- * This script fetches CS:GO/CS2 skin data from the Steam Market and generates a CSV file
- * with information including weapon type, skin name, quality, and Market API URLs.
- * 
+ * Scrapes the Counter-Strike fandom wiki's Skins/List page and writes
+ * cs_skins.csv (Collection, Weapon, Skin, Quality, Steam Market API URL) to
+ * the current directory. It takes no options.
+ *
  * Requirements:
- * - Node.js (v12.0.0 or higher)
- * - Required packages: 
- *   - axios (npm install axios)
- *   - papaparse (npm install papaparse)
- * 
+ * - Node.js 18+
+ * - `npm install` in the repository root (installs node-html-parser)
+ *
  * Usage:
- * node create_cs_skins.js [options]
- * 
- * Options:
- * --output <path>     Path where the CSV file will be saved (default: cs_skins.csv)
- * --batch-size <num>  Number of items to fetch per API request (default: 50)
- * --max-items <num>   Maximum number of items to fetch (default: 5000)
- * --delay <ms>        Delay between API requests in milliseconds (default: 1000)
- * 
- * Examples:
- * node create_cs_skins.js
- * node create_cs_skins.js --output my_skins.csv --max-items 1000
- * node create_cs_skins.js --batch-size 20 --delay 2000
- * 
+ * node Src/DB/create_cs_skins.js
+ *
  * Notes:
- * - Steam has rate limits, be careful with batch-size and delay settings
- * - The script may take several minutes to complete depending on settings
- * - The generated CSV will have columns: Collection, Weapon, Skin, Quality, Steam Market API URL
+ * - Exits with status 1 and leaves any existing cs_skins.csv untouched if the
+ *   wiki does not answer 200 or no skins are found.
  */
