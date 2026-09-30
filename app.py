@@ -3,6 +3,8 @@ import uuid
 import time
 import re
 import sqlite3
+import threading
+from collections import deque
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for, flash, g
@@ -270,6 +272,70 @@ def initialize_database():
 
 # Initialize the database
 initialize_database()
+
+class LoginThrottle:
+    """Count failed logins per client and refuse further attempts for a while.
+
+    In-memory and per-process: enough to stop an online password guesser
+    against a single `python app.py` instance, and it needs no extra service.
+    Failures older than `window` seconds are forgotten; a successful login
+    clears the client's count. Behind a reverse proxy every client shares the
+    proxy's address, so run the app directly or set up ProxyFix first.
+    """
+
+    def __init__(self, max_failures, window, clock=time.monotonic):
+        self.max_failures = max_failures
+        self.window = window
+        self.clock = clock
+        self._failures = {}
+        self._lock = threading.Lock()
+
+    def _recent(self, key, now):
+        failures = self._failures.get(key)
+        if failures is None:
+            return None
+        while failures and failures[0] <= now - self.window:
+            failures.popleft()
+        if not failures:
+            del self._failures[key]
+            return None
+        return failures
+
+    def retry_after(self, key):
+        """Seconds until `key` may try again, or 0 if it is not locked out."""
+        if self.max_failures <= 0:
+            return 0
+        with self._lock:
+            now = self.clock()
+            failures = self._recent(key, now)
+            if failures is None or len(failures) < self.max_failures:
+                return 0
+            return max(1, int(failures[-self.max_failures] + self.window - now + 0.999))
+
+    def record_failure(self, key):
+        with self._lock:
+            now = self.clock()
+            failures = self._recent(key, now)
+            if failures is None:
+                failures = self._failures[key] = deque()
+            failures.append(now)
+            # Only the newest max_failures timestamps matter.
+            while len(failures) > max(self.max_failures, 1):
+                failures.popleft()
+
+    def reset(self, key=None):
+        with self._lock:
+            if key is None:
+                self._failures.clear()
+            else:
+                self._failures.pop(key, None)
+
+
+login_throttle = LoginThrottle(
+    max_failures=int(os.environ.get('LOGIN_MAX_ATTEMPTS', '5')),
+    window=int(os.environ.get('LOGIN_LOCKOUT_MINUTES', '15')) * 60,
+)
+
 
 # Authentication functions
 def login_required(f):
@@ -912,6 +978,14 @@ def login():
         password = request.form.get('password', '')
         remember = 'remember' in request.form
         
+        client_key = request.remote_addr or 'unknown'
+        wait = login_throttle.retry_after(client_key)
+        if wait:
+            minutes = (wait + 59) // 60
+            flash(f'Too many failed login attempts. Try again in {minutes} minute'
+                  f'{"s" if minutes != 1 else ""}.', 'error')
+            return render_template('login.html'), 429
+
         error = None
         if not username:
             error = 'Username is required.'
@@ -929,8 +1003,10 @@ def login():
             # out which usernames are registered.
             if user is None or not check_password_hash(user['password_hash'], password):
                 error = 'Invalid username or password.'
+                login_throttle.record_failure(client_key)
             else:
                 # Login successful
+                login_throttle.reset(client_key)
                 session.clear()
                 session['user_id'] = user['id']
                 
