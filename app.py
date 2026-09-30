@@ -9,10 +9,9 @@ import threading
 from collections import deque
 from datetime import datetime, timedelta, timezone
 from functools import wraps
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for, flash, g
+from flask import Flask, render_template, request, session, redirect, url_for, flash, g
 from markupsafe import Markup
 from flask.sessions import SecureCookieSessionInterface
-from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.exceptions import RequestEntityTooLarge
 from Src.ImageDetector.modified_detect_text import WeeklyDropProcessor
@@ -609,8 +608,12 @@ PASTED_IMAGE_EXTENSIONS = {
     'jpg': 'jpg',
     'webp': 'webp',
     'bmp': 'bmp',
-    'gif': 'gif',
+    # OpenCV cannot read GIF, so a pasted GIF is re-encoded as PNG.
+    'gif': 'png',
 }
+
+# Formats cv2.imread can read, as Pillow names them -> extension to save under.
+CV2_READABLE_FORMATS = {'PNG': 'png', 'JPEG': 'jpg', 'WEBP': 'webp', 'BMP': 'bmp'}
 
 
 def decode_pasted_image(image_data):
@@ -627,8 +630,6 @@ def decode_pasted_image(image_data):
     """
     import base64
     import binascii
-    from io import BytesIO
-    from PIL import Image, UnidentifiedImageError
 
     if not image_data:
         raise ValueError('no image data received')
@@ -649,13 +650,54 @@ def decode_pasted_image(image_data):
     except (binascii.Error, ValueError):
         raise ValueError('image data is not valid base64')
 
+    image_format(binary_data)
+    return extension, binary_data
+
+
+def image_format(binary_data):
+    """Pillow's format name (e.g. 'PNG') for bytes that decode as an image.
+
+    Raises ValueError for anything else, including decompression bombs.
+    """
+    from io import BytesIO
+    from PIL import Image, UnidentifiedImageError
+
     try:
         with Image.open(BytesIO(binary_data)) as img:
+            fmt = img.format
             img.verify()
-    except (UnidentifiedImageError, OSError, SyntaxError) as e:
+    except (UnidentifiedImageError, OSError, SyntaxError, Image.DecompressionBombError) as e:
         raise ValueError(f'not a readable image ({e.__class__.__name__})')
+    return fmt
 
-    return extension, binary_data
+
+def save_uploaded_image(binary_data, path_stem):
+    """Validate an uploaded file and write it as `<path_stem>.<ext>`.
+
+    Uploaded files used to be saved under the client's own file name and
+    extension without any check, so anything at all could be written into
+    UPLOAD_FOLDER and was then handed to OpenCV. Now the bytes must decode as
+    an image; formats OpenCV reads are stored unchanged (no re-encode, so OCR
+    sees the original pixels) and anything else is converted to PNG.
+
+    Returns the path written. Raises ValueError if it is not an image.
+    """
+    from io import BytesIO
+    from PIL import Image
+
+    extension = CV2_READABLE_FORMATS.get(image_format(binary_data))
+    if extension:
+        filepath = f'{path_stem}.{extension}'
+        with open(filepath, 'wb') as f:
+            f.write(binary_data)
+        return filepath
+
+    filepath = f'{path_stem}.png'
+    with Image.open(BytesIO(binary_data)) as img:
+        if img.mode not in ('RGB', 'RGBA', 'L'):
+            img = img.convert('RGBA')
+        img.save(filepath)
+    return filepath
 
 
 def save_pasted_image(binary_data, filepath, max_dimension=2048):
@@ -1221,6 +1263,24 @@ def history():
     )
 
 
+def upload_error_page(user, message):
+    """Render a rejected upload as the results page with a 400.
+
+    These used to be bare JSON bodies, which a browser submitting the upload
+    form showed as raw text.
+    """
+    journal = get_user_journal(user['id']) if user else []
+    return render_template(
+        'results.html',
+        error=message,
+        screenshot_id='',
+        item_results=[],
+        user=user,
+        journal=journal,
+        total_value=get_journal_total(journal)
+    ), 400
+
+
 @app.route('/upload', methods=['POST'])
 @login_required
 def upload_file():
@@ -1239,21 +1299,15 @@ def upload_file():
         
         # Generate a unique screenshot ID for this upload
         screenshot_id = str(uuid.uuid4())
-        
-        # Debug information
-        print(f"Form data keys: {list(request.form.keys())}")
-        print(f"Files: {list(request.files.keys())}")
+        path_stem = os.path.join(app.config['UPLOAD_FOLDER'], screenshot_id)
         
         # Handle file upload
         if 'file' in request.files and request.files['file'].filename:
-            file = request.files['file']
-            if file.filename == '':
-                return jsonify({'error': 'No file selected'}), 400
-                
-            # Generate a unique filename
-            filename = secure_filename(f"{screenshot_id}_{file.filename}")
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            file.save(filepath)
+            try:
+                filepath = save_uploaded_image(request.files['file'].read(), path_stem)
+            except ValueError as upload_error:
+                print(f"Rejected uploaded file: {upload_error}")
+                return upload_error_page(user, f'That file is not a screenshot we can read: {upload_error}.')
             print(f"Saved uploaded file to {filepath}")
         
         # Handle pasted image
@@ -1262,20 +1316,27 @@ def upload_file():
                 extension, binary_data = decode_pasted_image(request.form['image_data'])
             except ValueError as paste_error:
                 print(f"Rejected pasted image: {paste_error}")
-                return jsonify({'error': f'Error processing pasted image: {paste_error}'}), 400
+                return upload_error_page(user, f'Error processing pasted image: {paste_error}.')
 
             # The extension comes from PASTED_IMAGE_EXTENSIONS, never from the
             # request, so the path cannot escape UPLOAD_FOLDER.
-            filename = f"{screenshot_id}.{extension}"
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            filepath = f"{path_stem}.{extension}"
             save_pasted_image(binary_data, filepath)
             print(f"Saved pasted image to {filepath}")
         else:
             print("Neither file nor image data found in the request")
-            return jsonify({'error': 'No file or image data provided'}), 400
+            return upload_error_page(user, 'No file or pasted image was received.')
         
-        # Process the image
-        item_names = process_image(filepath)
+        # Process the image. The screenshot is not needed afterwards (nothing
+        # displays it), so it is deleted right away rather than lingering
+        # for up to an hour until cleanup_uploads() gets to it.
+        try:
+            item_names = process_image(filepath)
+        finally:
+            try:
+                os.remove(filepath)
+            except OSError:
+                pass
         print(f"Detected {len(item_names)} items in the image")
         
         # Match items to database
@@ -1347,8 +1408,8 @@ def add_to_journal():
     # Limit to adding at most 2 items at a time
     item_ids = item_ids[:2]
     
+    conn = get_db()
     try:
-        conn = get_db()
         
         for item_id in item_ids:
             cur = conn.execute(
@@ -1404,8 +1465,8 @@ def remove_from_journal():
     if not journal_id:
         return redirect(url_for('index'))
     
+    conn = get_db()
     try:
-        conn = get_db()
         
         # Verify the journal item belongs to this user
         journal_item = conn.execute(
@@ -1438,8 +1499,8 @@ def clear_journal():
     if not user:
         return redirect(url_for('login'))
     
+    conn = get_db()
     try:
-        conn = get_db()
         conn.execute(
             "DELETE FROM user_journals WHERE user_id = ?",
             (user['id'],)
