@@ -229,6 +229,7 @@
             <p>Upload a screenshot of your CS2 weekly drops to analyze them:</p>
             
             <form action="{{ url_for('upload_file') }}" method="post" enctype="multipart/form-data" id="uploadForm">
+                {{ csrf_field() }}
                 <!-- File drop zone -->
                 <div class="drop-zone" id="drop-zone">
                     <p>Drag and drop a screenshot here, or click to browse</p>
@@ -277,6 +278,7 @@
                         <p>${{ item.item_price }}</p>
                         {% endif %}
                         <form action="{{ url_for('remove_from_journal') }}" method="post">
+                            {{ csrf_field() }}
                             <input type="hidden" name="journal_id" value="{{ item.id }}">
                             <button type="submit" class="remove-btn" title="Remove from journal">×</button>
                         </form>
@@ -286,6 +288,7 @@
                     {% if user %}
                     <div class="clear-journal">
                         <form action="{{ url_for('clear_journal') }}" method="post" onsubmit="return confirm('Are you sure you want to clear your entire journal?');">
+                            {{ csrf_field() }}
                             <button type="submit" class="btn btn-outline">Clear Journal</button>
                         </form>
                     </div>

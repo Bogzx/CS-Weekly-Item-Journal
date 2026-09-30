@@ -2,16 +2,19 @@ import os
 import uuid
 import time
 import re
+import hmac
+import secrets
 import sqlite3
 import threading
 from collections import deque
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for, flash, g
+from markupsafe import Markup
 from flask.sessions import SecureCookieSessionInterface
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
-from werkzeug.formparser import RequestEntityTooLarge
+from werkzeug.exceptions import RequestEntityTooLarge
 from Src.ImageDetector.modified_detect_text import WeeklyDropProcessor
 from Src.ImageDetector.item_matcher import ItemMatcher
 
@@ -124,8 +127,14 @@ UNREMEMBERED_SESSION_LIFETIME = timedelta(hours=1)
 
 # Configure the session to use cookies
 app.config['UPLOAD_FOLDER'] = repo_path(os.environ.get('UPLOAD_FOLDER', 'uploads'))
-app.config['MAX_CONTENT_LENGTH'] = 256 * 1024 * 1024  # 256MB max upload (increased from 128MB)
-app.config['MAX_CONTENT_PATH'] = 16 * 1024 * 1024  # 16MB max for form fields
+# A 4K PNG screenshot is ~10 MB, and a pasted one arrives as base64 text in a
+# form field (+33%). This was 256 MB, which let any logged-in user make the
+# server buffer and decode a quarter-gigabyte request per upload.
+MAX_UPLOAD_MB = int(os.environ.get('MAX_UPLOAD_MB', '20'))
+app.config['MAX_CONTENT_LENGTH'] = MAX_UPLOAD_MB * 1024 * 1024
+# Werkzeug's per-field in-memory limit (default 500 KB) must fit a pasted
+# screenshot, so it follows the request limit.
+app.config['MAX_FORM_MEMORY_SIZE'] = app.config['MAX_CONTENT_LENGTH']
 app.config['DATABASE'] = repo_path(os.environ.get('DATABASE_PATH', 'csgo_items.db'))
 app.config['MODEL_PATH'] = repo_path(os.environ.get('MODEL_PATH', os.path.join('Models', 'BOX_TRAINED.pt')))
 app.config['SESSION_TYPE'] = 'filesystem'
@@ -172,8 +181,49 @@ def enforce_session_expiry():
     if expires_at is not None and datetime.now(timezone.utc).timestamp() > expires_at:
         session.clear()
 
-# Increase request size limits for Werkzeug
-app.config['MAX_FORM_MEMORY_SIZE'] = 64 * 1024 * 1024  # 64MB for form data
+# --- CSRF protection -------------------------------------------------------
+#
+# Every POST must carry the per-session token that templates embed with
+# {{ csrf_field() }}. SameSite=Lax cookies already stop most cross-site form
+# posts in current browsers, but not from a sibling subdomain or an old
+# browser, and every state-changing route here (add/remove/clear journal,
+# upload, login) is a plain form POST. A small token check needs no extra
+# dependency; Flask-WTF's CSRFProtect is the drop-in alternative.
+CSRF_SESSION_KEY = '_csrf_token'
+CSRF_FIELD = 'csrf_token'
+app.config.setdefault('CSRF_ENABLED', _env_bool('CSRF_ENABLED', True))
+
+
+def get_csrf_token():
+    """This session's CSRF token, created on first use."""
+    token = session.get(CSRF_SESSION_KEY)
+    if not token:
+        token = secrets.token_urlsafe(32)
+        session[CSRF_SESSION_KEY] = token
+    return token
+
+
+def csrf_field():
+    """Hidden form input carrying the CSRF token (for templates)."""
+    return Markup(f'<input type="hidden" name="{CSRF_FIELD}" value="{get_csrf_token()}">')
+
+
+app.jinja_env.globals.update(csrf_token=get_csrf_token, csrf_field=csrf_field)
+
+
+@app.before_request
+def csrf_protect():
+    if request.method != 'POST' or not app.config.get('CSRF_ENABLED', True):
+        return None
+    expected = session.get(CSRF_SESSION_KEY)
+    sent = request.form.get(CSRF_FIELD) or request.headers.get('X-CSRF-Token')
+    if not expected or not sent or not hmac.compare_digest(str(sent), str(expected)):
+        app.logger.warning("Rejected POST %s: missing or invalid CSRF token", request.path)
+        return ('The form was missing its security token or it has expired. '
+                'Go back, reload the page and try again.', 400,
+                {'Content-Type': 'text/plain; charset=utf-8'})
+    return None
+
 
 # Ensure the upload folder exists
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -1090,11 +1140,9 @@ def history():
 def upload_file():
     """Handle file upload or pasted image."""
     try:
-        # Handle RequestEntityTooLarge exception
-        # This will catch the 413 error before it becomes an HTTP response
-        if request.content_length and request.content_length > app.config['MAX_CONTENT_LENGTH']:
-            raise RequestEntityTooLarge("The uploaded file is too large. Maximum size is 256MB.")
-            
+        # Oversized requests never get here: Flask enforces MAX_CONTENT_LENGTH
+        # while parsing the form and the 413 handler below takes over.
+
         # Check if cleanup is needed
         cleanup_uploads()
         
@@ -1324,14 +1372,16 @@ def clear_journal():
 def handle_request_entity_too_large(error):
     """Handle 413 Request Entity Too Large error."""
     print(f"413 Error: {error}")
-    flash('The image you uploaded is too large. Please reduce its size or upload a different image.', 'error')
+    flash(f'The image you uploaded is too large (limit {MAX_UPLOAD_MB} MB). '
+          f'Please reduce its size or upload a different image.', 'error')
     return redirect(url_for('index'))
 
 @app.errorhandler(413)
 def request_entity_too_large(error):
     """Handle 413 Request Entity Too Large error (HTTP version)."""
     print(f"HTTP 413 Error: {error}")
-    flash('The image you uploaded is too large. Please reduce its size or upload a different image.', 'error')
+    flash(f'The image you uploaded is too large (limit {MAX_UPLOAD_MB} MB). '
+          f'Please reduce its size or upload a different image.', 'error')
     return redirect(url_for('index'))
 
 

@@ -278,9 +278,12 @@ pytest -q -m "not slow"
   but a full price crawl is ~10 hours because Steam serves 10 items per
   request. A priced database published as a GitHub Release asset would make
   the first run instant.
-* **No login rate limiting or CSRF tokens.** Session cookies are
-  `SameSite=Lax`, which blocks cross-site form posts in current browsers, but
-  do not expose the app beyond your own machine or LAN.
+* **Built for your own machine or LAN.** Logins are throttled per client IP
+  (in memory) and every form POST carries a CSRF token, but there is no
+  HTTPS, no password reset and no account deletion. Put it behind a TLS proxy
+  (and set `SESSION_COOKIE_SECURE=True`) before exposing it more widely; note
+  that the login throttle then sees the proxy's address unless you add
+  Werkzeug's `ProxyFix`.
 
 ## 🤝 Contributing
 
