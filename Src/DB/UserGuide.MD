@@ -31,7 +31,7 @@ python Src/DB/populate_database.py
 #    requests / ~10 hours at the 10 s delay. update_price.py sleeps 15 s
 #    before EVERY item, so a full refresh of a 20k-row database takes over
 #    three days. Use it only for a few items.
-python Src/DB/bulk_scraper.py  # For bulk updates (use this)
+python Src/DB/bulk_scraper.py --drop-pool  # Bulk: only what the weekly drop offers (~2.5 h)
 # OR
 python Src/DB/update_price.py  # One item at a time (very slow)
 
@@ -146,11 +146,14 @@ Options:
 * `--collections "Collection1" "Collection2"`: Only update items from specific collections
 * `--max 1000`: Maximum number of items to fetch from Steam
 * `--batch-size 100`: Items requested per API call (Steam currently returns at most 10)
-* `--type rifle`: Filter by item type (rifle, pistol, knife, container, sticker)
+* `--type rifle`: Filter by item type (rifle, pistol, smg, sniper, knife, case, graffiti, sticker)
 * `--quality stattrak`: Filter by quality (normal, stattrak, souvenir)
 * `--weapon ak47`: Filter by specific weapon (ak47, awp, m4a4)
 * `--exterior fn`: Filter by exterior (fn, mw, ft, ww, bs)
 * `--query "Asiimov"`: Search for specific items
+* `--drop-pool`: Only normal-quality weapon skins, cases and graffiti, i.e. what
+  the weekly drop offers and what `fetch_item_lists.py` puts in the database
+  (~8,900 items, ~900 requests, ~2.5 hours instead of ~10)
 * `--list-filters`: Show available filter options
 
 The bulk updater is much faster as it fetches many items at once rather than one by one.

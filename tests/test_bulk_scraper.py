@@ -267,3 +267,69 @@ def test_missing_database_exits_non_zero(monkeypatch, tmp_path):
     monkeypatch.setattr('sys.argv', ['bulk_scraper.py', '--db', str(tmp_path / 'nope.db')])
 
     assert bulk_scraper.main() == 1
+
+
+class TestDropPool:
+    def run_main(self, monkeypatch, tmp_path, argv):
+        """Run main() with the crawl stubbed out; return the filters it used."""
+        db = tmp_path / 'items.db'
+        sqlite3.connect(db).execute(
+            "CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT, collection TEXT, "
+            "price REAL, price_type TEXT, last_updated TEXT)").connection.close()
+        seen = {}
+
+        def fake_fetch_all(max_items, batch_size, filters, query):
+            seen['filters'] = filters
+            return {}, True
+
+        monkeypatch.setattr(bulk_scraper, 'fetch_all_prices', fake_fetch_all)
+        assert bulk_scraper.main(['--db', str(db)] + argv) == 0
+        return seen['filters']
+
+    def test_preset_covers_skins_cases_and_graffiti_in_normal_quality(self, monkeypatch, tmp_path):
+        filters = self.run_main(monkeypatch, tmp_path, ['--drop-pool'])
+
+        assert filters['category_730_Quality'] == ['tag_normal']
+        types = filters['category_730_Type']
+        assert {'tag_CSGO_Type_Rifle', 'tag_CSGO_Type_WeaponCase', 'tag_CSGO_Type_Spray',
+                'tag_CSGO_Type_Equipment'} <= set(types)
+        assert 'tag_CSGO_Type_Knife' not in types
+
+    def test_preset_url_repeats_every_type(self):
+        url = bulk_scraper.build_steam_market_url(0, 10, bulk_scraper.DROP_POOL_FILTERS)
+
+        qs = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
+        assert len(qs['category_730_Type[]']) == len(bulk_scraper.DROP_POOL_FILTERS['category_730_Type'])
+
+    def test_preset_is_not_mutated_by_other_filters(self, monkeypatch, tmp_path):
+        filters = self.run_main(monkeypatch, tmp_path, ['--drop-pool', '--type', 'case'])
+
+        assert filters['category_730_Type'] == 'tag_CSGO_Type_WeaponCase'
+        assert len(bulk_scraper.DROP_POOL_FILTERS['category_730_Type']) > 1
+
+    def test_case_type_uses_a_tag_that_exists(self, monkeypatch, tmp_path):
+        """tag_CSGO_Type_Container matched 0 market items (checked live)."""
+        filters = self.run_main(monkeypatch, tmp_path, ['--type', 'case'])
+
+        assert filters == {'category_730_Type': 'tag_CSGO_Type_WeaponCase'}
+
+
+def test_daily_job_crawls_the_drop_pool(appmod, monkeypatch, tmp_path):
+    import json
+
+    config = tmp_path / 'price.json'
+    config.write_text(json.dumps(appmod.DEFAULT_PRICE_UPDATE_CONFIG))
+    monkeypatch.setenv('PRICE_UPDATE_CONFIG', str(config))
+    commands = []
+
+    class Done:
+        returncode = 0
+        stdout = ''
+        stderr = ''
+
+    monkeypatch.setattr(appmod.subprocess, 'run', lambda cmd, **kw: commands.append(cmd) or Done())
+
+    appmod.update_prices_job()
+
+    assert '--drop-pool' in commands[0]
+    assert commands[0][commands[0].index('--max') + 1] == '10000'

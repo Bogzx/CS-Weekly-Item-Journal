@@ -137,9 +137,9 @@ python Src/DB/fetch_item_lists.py
 # 3. Load them into the database (~6,800 skin/wear rows, 42 cases, ~1,800 graffiti)
 python Src/DB/populate_database.py
 
-# 4. Fetch prices. bulk_scraper pulls a page of items per request -- prefer it.
-#    A full crawl is ~3,500 requests (~10 hours); see "Updating Prices".
-python Src/DB/bulk_scraper.py
+# 4. Fetch prices for everything the weekly drop can offer: ~900 Steam
+#    requests, about 2.5 hours. See "Updating Prices".
+python Src/DB/bulk_scraper.py --drop-pool
 ```
 
 Steps 1–3 take seconds and are covered by an offline test
@@ -215,16 +215,20 @@ rule only changes how skins and colour-less graffiti compare to them.
 ## 🔄 Updating Prices
 
 The scheduler runs a daily bulk price update at 00:00 UTC once the app is
-running, using the limits in `price_update_config.json` (default: the first
-5,000 market items by name, ~500 requests, roughly 85 minutes). To update
-manually:
+running, using `price_update_config.json`. By default (`"drop_pool": true`) it
+crawls only what the weekly drop can offer, which is exactly what the database
+holds: normal-quality weapon skins, cases and graffiti. That is ~8,900 market
+items, ~900 requests, about 2.5 hours. To update manually:
 
 ```bash
-# Bulk update. Steam returns at most 10 items per request and the scraper
-# waits 10 s between pages, so the whole market (~35k items) takes ~10 hours.
+# Recommended: the weekly-drop pool only (~2.5 hours)
+python Src/DB/bulk_scraper.py --drop-pool
+
+# The whole market. Steam returns at most 10 items per request and the scraper
+# waits 10 s between pages, so ~35k items take ~10 hours.
 python Src/DB/bulk_scraper.py
 
-# Narrow it down: only cases, or a single search term
+# Narrow it down: only cases (or graffiti), or a single search term
 python Src/DB/bulk_scraper.py --type case
 python Src/DB/bulk_scraper.py --query "Revolution Case"
 
@@ -232,8 +236,10 @@ python Src/DB/bulk_scraper.py --query "Revolution Case"
 python Src/DB/bulk_scraper.py --collections "Clutch Case" "The Clutch Collection"
 
 # Cap the number of market items fetched
-python Src/DB/bulk_scraper.py --max 5000
+python Src/DB/bulk_scraper.py --drop-pool --max 5000
 ```
+
+The app picks up new prices on the next upload; no restart is needed.
 
 On HTTP 429 the scraper backs off (60 s, 120 s, honouring `Retry-After`). If
 Steam keeps refusing it stops, keeps the prices it already fetched, and exits
@@ -277,8 +283,8 @@ pytest -q -m "not slow"
   0.995) is therefore irreplaceable. Re-labelling is an owner task — see the
   pull request description for concrete steps.
 * **No prebuilt `csgo_items.db` ships.** The item list builds in seconds,
-  but a full price crawl is ~10 hours because Steam serves 10 items per
-  request. A priced database published as a GitHub Release asset would make
+  but the first price crawl takes ~2.5 hours because Steam serves 10 items
+  per request. A priced database published as a GitHub Release asset would make
   the first run instant.
 * **Built for your own machine or LAN.** Logins are throttled per client IP
   (in memory) and every form POST carries a CSRF token, but there is no
