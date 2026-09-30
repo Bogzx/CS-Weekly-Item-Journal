@@ -23,9 +23,11 @@ def test_creates_schema_on_a_fresh_path(tmp_path):
     assert 'price_type' in cols
 
 
-def test_refuses_to_touch_an_existing_database(tmp_path):
+def test_refuses_to_touch_an_existing_item_database(tmp_path):
     db = str(tmp_path / 'items.db')
+    create_database.create_csgo_database(db)
     conn = sqlite3.connect(db)
+    conn.execute("INSERT INTO items (name, market_api_url) VALUES ('Priced Item', '')")
     conn.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT)")
     conn.execute("INSERT INTO users (username) VALUES ('alice')")
     conn.commit()
@@ -33,6 +35,24 @@ def test_refuses_to_touch_an_existing_database(tmp_path):
 
     assert create_database.main(['--db', db]) == 1
 
+    conn = sqlite3.connect(db)
+    assert conn.execute("SELECT username FROM users").fetchall() == [('alice',)]
+    assert conn.execute("SELECT name FROM items").fetchall() == [('Priced Item',)]
+
+
+def test_adds_item_tables_to_a_database_the_app_created_first(tmp_path):
+    """Starting app.py before building the item DB creates the file with only
+    users/journals. Setup step 1 used to refuse it and demand --force."""
+    db = str(tmp_path / 'items.db')
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT)")
+    conn.execute("INSERT INTO users (username) VALUES ('alice')")
+    conn.commit()
+    conn.close()
+
+    assert create_database.main(['--db', db]) == 0
+
+    assert {'items', 'collections', 'users'} <= tables(db)
     assert sqlite3.connect(db).execute("SELECT username FROM users").fetchall() == [('alice',)]
 
 
