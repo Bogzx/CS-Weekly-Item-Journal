@@ -3,6 +3,8 @@
 import base64
 import io
 import os
+import subprocess
+import sys
 import uuid
 
 import pytest
@@ -312,3 +314,41 @@ class TestLoginErrors:
 
         assert b'Invalid username or password.' in wrong_pw.data
         assert b'Invalid username or password.' in no_user.data
+
+
+class TestUltralyticsSideEffects:
+    """Importing ultralytics replaces PIL.Image.open with a wrapper that, on
+    any image Pillow cannot open, calls check_requirements('pi-heif'). With
+    ultralytics' defaults that runs `pip install pi-heif` (or `uv pip install`)
+    inside the web process, i.e. every rejected upload on a fresh server
+    installed a package from PyPI. It also sends usage analytics on every
+    prediction. The detector module switches both off before importing it."""
+
+    def test_detector_import_turns_off_autoinstall_and_analytics(self, repo_root):
+        code = ('import Src.ImageDetector.modified_detect_text\n'
+                'from ultralytics import utils\n'
+                'print(utils.AUTOINSTALL, utils.ONLINE)\n')
+        env = {k: v for k, v in os.environ.items() if not k.startswith('YOLO_')}
+
+        result = subprocess.run([sys.executable, '-c', code], cwd=repo_root, env=env,
+                                capture_output=True, text=True, timeout=300)
+
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.split()[-2:] == ['False', 'False']
+
+    def test_rejected_image_never_starts_a_subprocess(self, appmod, monkeypatch, tmp_path):
+        started = []
+
+        def record(*args, **kwargs):
+            # Raising (not pytest.fail) because ultralytics retries and
+            # swallows errors from its install attempt.
+            started.append(args)
+            raise OSError('subprocess blocked by test')
+
+        for name in ('check_output', 'check_call', 'run', 'Popen'):
+            monkeypatch.setattr(subprocess, name, record)
+
+        for junk in (b'not an image', eps_bytes(tmp_path / 'ghostscript-ran')):
+            with pytest.raises(ValueError):
+                appmod.image_format(junk)
+        assert started == []

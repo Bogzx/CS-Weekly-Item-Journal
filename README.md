@@ -103,6 +103,10 @@ pip install -r requirements.txt --extra-index-url https://download.pytorch.org/w
 # pip install -r requirements.txt
 ```
 
+`requirements.txt` sets version ranges. `requirements.lock` pins the exact set
+CI tests on Linux x86_64 with Python 3.12 (`pip install -r requirements.lock`);
+use it when you want a known-good install rather than today's latest releases.
+
 ### Configure
 
 ```bash
@@ -191,6 +195,11 @@ FLASK_HOST=0.0.0.0 FLASK_PORT=5000 FLASK_DEBUG=1 python app.py
 
 `FLASK_DEBUG` is off by default on purpose — Werkzeug's debugger hands out an
 interactive Python console on any unhandled exception.
+
+The detector sets `YOLO_AUTOINSTALL=false` and `YOLO_OFFLINE=true` before it
+imports ultralytics (unless you set them yourself). Without that, ultralytics
+sends anonymous usage analytics on every prediction, and `pip install`s
+`pi-heif` from inside the app the first time an upload is not a readable image.
 
 ## 📊 Database Structure
 
@@ -285,7 +294,7 @@ python Src/DB/verify_database.py
 ## ✅ Tests
 
 ```bash
-pip install pytest
+pip install -r requirements-dev.txt
 pytest -q
 ```
 
