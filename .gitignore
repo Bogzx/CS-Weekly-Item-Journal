@@ -201,3 +201,7 @@ my_model/train/
 
 # Node dependency for Src/DB/create_cs_skins.js (npm install)
 node_modules/
+
+# Pretrained weights ultralytics downloads into the working directory when
+# tools/train_detector.py starts from yolo11s.pt. The app's model lives in Models/.
+/*.pt
