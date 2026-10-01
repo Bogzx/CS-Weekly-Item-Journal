@@ -340,6 +340,22 @@ pytest -q -m "not slow"
   (and set `SESSION_COOKIE_SECURE=True`, and `TRUSTED_PROXIES=1` so the
   login throttle sees real client addresses) before exposing it more widely.
 
+## 🗂️ Code layout
+
+| Path | What it holds |
+|---|---|
+| `app.py` | Flask app: configuration, wiring and the request handlers |
+| `Src/Web/` | the app's logic, one module per concern: `auth` (sessions, CSRF, login throttle), `db`, `uploads` (screenshot validation), `matching`, `valuation`, `history`, `prices` (the daily crawl) |
+| `Src/ImageDetector/` | the vision pipeline (`modified_detect_text.py`) and the fuzzy matcher (`item_matcher.py`) |
+| `Src/DB/` | building the item database and crawling prices (`Src/DB/UserGuide.MD`) |
+| `templates/` | the pages: hand-written HTML, CSS and JavaScript |
+| `tools/` | measuring the pipeline (`ocr_accuracy.py`) |
+| `tests/` | `pytest -m "not slow"` needs neither the model nor the network |
+
+Logs go through Python's `logging` (`python app.py` prints INFO and above).
+Unexpected errors are logged with their traceback; the page only says that
+something went wrong.
+
 ## 🤝 Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
