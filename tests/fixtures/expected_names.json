@@ -1,7 +1,8 @@
 {
- "_about": "Hand-labelled contents of every screenshot in Training_Images/, left to right, labelled 2026-09-30 by reading each image (zoomed where small). `name` is the Steam market name. `shown` is present when the screen displays something else (non-English client); such slots are not scored against English OCR. `certain: false` marks a label that is a translation guess. `in_item_db: false` marks items fetch_item_lists.py does not put in the database. Images with `scored: false` or `duplicate_of` are skipped by tools/ocr_accuracy.py. Every name was checked against ByMykel/CSGO-API.",
+ "_about": "Hand-labelled contents of every screenshot in Training_Images/, left to right, labelled 2026-09-30 by reading each image (zoomed where small). `name` is the Steam market name. `shown` is present when the screen displays something else (non-English client); such slots are not scored against English OCR. `certain: false` marks a label that is a translation guess. `in_item_db: false` marks items fetch_item_lists.py does not put in the database. Images with `scored: false` or `duplicate_of` are skipped by tools/ocr_accuracy.py. Every name was checked against ByMykel/CSGO-API. `split` is \"dev\" for every image here: they are the panel detector's training and validation images, and the OCR band, UI-line filter and confidence thresholds were tuned on them, so dev accuracy is in-sample. Held-out screenshots go in with \"split\": \"test\" (and \"dir\" if they are not in Training_Images/).",
  "images": {
   "3051505611_preview_Без имени-4.png": {
+   "split": "dev",
    "slots": [
     {
      "name": "Recoil Case"
@@ -18,6 +19,7 @@
    ]
   },
   "F7EIUH3asAAQgXl.jpg": {
+   "split": "dev",
    "slots": [
     {
      "name": "Snakebite Case"
@@ -34,6 +36,7 @@
    ]
   },
   "GZdDwl9XwAAVn_R.png": {
+   "split": "dev",
    "slots": [
     {
      "name": "Revolution Case"
@@ -51,6 +54,7 @@
    ]
   },
   "Select-Weekly-Drop-Rewards-in-CS2.webp": {
+   "split": "dev",
    "slots": [
     {
      "name": "Revolution Case"
@@ -68,6 +72,7 @@
    "notes": "small (750 px wide)"
   },
   "TEST FINAL.png": {
+   "split": "dev",
    "scored": false,
    "notes": "German client, photo of a monitor at a steep angle",
    "slots": [
@@ -92,6 +97,7 @@
    ]
   },
   "blog39photo2.jpg": {
+   "split": "dev",
    "slots": [
     {
      "name": "Recoil Case"
@@ -108,6 +114,7 @@
    ]
   },
   "cs2-drop-system-possibly-broken-3-restricted-skins-in-a-row-v0-vaw9d8fy0uec1.webp": {
+   "split": "dev",
    "notes": "Finnish client; only the weapon skin is shown in English",
    "slots": [
     {
@@ -129,6 +136,7 @@
    ]
   },
   "cs2-new-drops-system-v0-ithfcqpz7vqb1.webp": {
+   "split": "dev",
    "slots": [
     {
      "name": "Fracture Case"
@@ -145,6 +153,7 @@
    ]
   },
   "finally-a-good-weekly-drop-v0-4j7ky9psl3xd1.webp": {
+   "split": "dev",
    "notes": "photo of a monitor",
    "slots": [
     {
@@ -163,11 +172,13 @@
    ]
   },
   "high_res_output.jpg": {
+   "split": "dev",
    "scored": false,
    "slots": null,
    "notes": "not a care-package screenshot: a photo of Google image results (the tiny thumbnails are unreadable). The pipeline should find no panel or produce nothing matchable."
   },
   "hq720.jpg": {
+   "split": "dev",
    "slots": [
     {
      "name": "Fracture Case"
@@ -186,6 +197,7 @@
    "notes": "small (686 px wide)"
   },
   "image.png": {
+   "split": "dev",
    "slots": [
     {
      "name": "Revolution Case"
@@ -203,6 +215,7 @@
    "notes": "golden-test fixture"
   },
   "image2.png": {
+   "split": "dev",
    "slots": [
     {
      "name": "Revolution Case"
@@ -220,6 +233,7 @@
    "notes": "same drop as image.png, cropped"
   },
   "image3.png": {
+   "split": "dev",
    "slots": [
     {
      "name": "Revolution Case"
@@ -236,6 +250,7 @@
    ]
   },
   "maxres2.jpg": {
+   "split": "dev",
    "slots": [
     {
      "name": "Recoil Case"
@@ -253,6 +268,7 @@
    "notes": "portrait video frame; panel is ~370 px wide"
   },
   "maxresdefault.jpg": {
+   "split": "dev",
    "slots": [
     {
      "name": "Dreams & Nightmares Case"
@@ -269,6 +285,7 @@
    ]
   },
   "n51265 (1).jpeg": {
+   "split": "dev",
    "slots": [
     {
      "name": "Revolution Case"
@@ -286,6 +303,7 @@
    "notes": "rewards already claimed: dimmed, low-contrast text"
   },
   "pic-20230927-885x213-1799455449.png": {
+   "split": "dev",
    "slots": [
     {
      "name": "Dreams & Nightmares Case"
@@ -302,9 +320,11 @@
    ]
   },
   "pythjonm.jpeg": {
+   "split": "dev",
    "duplicate_of": "n51265 (1).jpeg"
   },
   "test.webp": {
+   "split": "dev",
    "slots": [
     {
      "name": "Snakebite Case"
@@ -321,6 +341,7 @@
    ]
   },
   "tvc41q6ua4sb1.webp": {
+   "split": "dev",
    "slots": [
     {
      "name": "CS:GO Weapon Case"
@@ -337,6 +358,7 @@
    ]
   },
   "weekly-drop-v0-vng9r4y8lymc1.webp": {
+   "split": "dev",
    "scored": false,
    "notes": "German client, photo of a monitor, panel cut off at the left edge",
    "slots": [
@@ -360,6 +382,7 @@
    ]
   },
   "what-are-the-odds-of-getting-a-9-skin-in-a-weekley-drop-fn-v0-va67pkamsric1.webp": {
+   "split": "dev",
    "slots": [
     {
      "name": "Recoil Case"
@@ -376,6 +399,7 @@
    ]
   },
   "wow-i-got-a-blue-from-the-weekly-drop-v0-iscppqbfxdyb1.webp": {
+   "split": "dev",
    "slots": [
     {
      "name": "Operation Bravo Case"
