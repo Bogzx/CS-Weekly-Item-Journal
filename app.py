@@ -26,7 +26,7 @@ from Src.Web.auth import (  # noqa: F401  (CSRF_FIELD, CSRF_SESSION_KEY: tests a
 )
 from Src.Web.db import (
     close_db, get_current_user, get_db, get_journal_price_rows, get_journal_total,
-    get_user_journal, initialize_database,
+    get_user_journal, initialize_database, price_freshness,
 )
 from Src.Web.history import (
     CS2_RESET_HOUR_UTC, build_history_chart, resolve_week_boundary, summarize_history,
@@ -36,7 +36,7 @@ from Src.Web.settings import env_bool, repo_path, resolve_secret_key
 from Src.Web.uploads import (
     cleanup_uploads as _cleanup_uploads, decode_pasted_image, save_pasted_image, save_uploaded_image,
 )
-from Src.Web.valuation import RECOMMENDED_PICKS, VALUATION_RULES, resolve_valuation_rule
+from Src.Web.valuation import RECOMMENDED_PICKS, VALUATION_RULES, resolve_valuation_rule, seller_proceeds
 
 # Load variables from .env file
 load_dotenv()
@@ -88,12 +88,16 @@ app.config['SESSION_COOKIE_SECURE'] = env_bool('SESSION_COOKIE_SECURE', False)
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config.setdefault('CSRF_ENABLED', env_bool('CSRF_ENABLED', True))
+# The daily crawl keeps prices under a day old. Older than this and the
+# results page says the price update has probably stopped working.
+app.config['PRICE_STALE_HOURS'] = float(os.environ.get('PRICE_STALE_HOURS', '48'))
 
 app.session_interface = RememberMeSessionInterface()
 app.before_request(enforce_session_expiry)
 app.before_request(csrf_protect)
 app.teardown_appcontext(close_db)
 app.jinja_env.globals.update(csrf_token=get_csrf_token, csrf_field=csrf_field)
+app.jinja_env.filters['after_fees'] = seller_proceeds
 
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 initialize_database(app.config['DATABASE'])
@@ -470,6 +474,8 @@ def upload_file():
             recommendations=recommendations,
             valuation_rule=app.config['VALUATION_RULE'],
             valuation_label=VALUATION_RULES[app.config['VALUATION_RULE']],
+            prices=price_freshness(app.config['PRICE_STALE_HOURS']),
+            stale_hours=app.config['PRICE_STALE_HOURS'],
             user=user,
             journal=journal,
             total_value=get_journal_total(journal)

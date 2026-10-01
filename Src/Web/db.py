@@ -119,3 +119,33 @@ def get_journal_price_rows(user_id):
         (user_id,)
     ).fetchall()
     return [(row['created_at'], row['item_price']) for row in rows]
+
+
+def price_freshness(stale_hours):
+    """When the item prices were last fetched, for the results page.
+
+    Returns None if no tradable item has a price yet. Otherwise a dict with
+    `updated_at` (a naive datetime in the server's local time, which is what
+    the scrapers write), `age_hours`, `stale` (older than `stale_hours`) and
+    `priced_items`. Non-tradable items are left out: their $0 is set when the
+    database is built, not fetched from Steam.
+    """
+    from datetime import datetime
+
+    try:
+        row = get_db().execute(
+            "SELECT MAX(last_updated) AS updated, COUNT(*) AS priced FROM items "
+            "WHERE price IS NOT NULL AND tradable = 1"
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return None  # no item table yet: the item database has not been built
+    if not row or not row['priced'] or not row['updated']:
+        return None
+    try:
+        updated_at = datetime.fromisoformat(str(row['updated']).strip())
+    except ValueError:
+        logger.warning("Unreadable last_updated value %r in items", row['updated'])
+        return None
+    age_hours = (datetime.now() - updated_at).total_seconds() / 3600
+    return {'updated_at': updated_at, 'age_hours': age_hours,
+            'stale': age_hours > stale_hours, 'priced_items': row['priced']}

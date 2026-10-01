@@ -248,6 +248,17 @@ rule only changes how skins and colour-less graffiti compare to them.
 Drop items that cannot be sold (so far only the **Charm Detachment Pack**)
 match normally but show **Not tradable — $0** and are never recommended.
 
+**Which price.** The stored price is Steam's `sell_price`: the lowest current
+listing in USD, i.e. what a buyer pays. A seller gets less. Steam takes 5 %
+and the game 10 % on top of the seller's amount, each at least $0.01. So the
+recommendation box also shows what you would receive by selling at that price
+(about 13 % less; $0.03 becomes $0.01).
+
+**How old.** The results page says when the prices were fetched (server
+time). When the newest price is older than `PRICE_STALE_HOURS` (default 48),
+it shows a warning: the daily update should keep prices under a day old, so
+the crawl has probably been failing.
+
 ## 🔄 Updating Prices
 
 The scheduler runs a daily bulk price update at 00:00 UTC once the app is
