@@ -132,7 +132,9 @@ python -c "import secrets; print('SECRET_KEY=' + secrets.token_hex(32))"
 ```
 
 Open `.env` and replace the placeholder `SECRET_KEY` line with the generated
-one. Everything else has a working default.
+one. Everything else has a working default. The app reads the `.env` next to
+`app.py` (or the file named by the environment variable `DOTENV_PATH`), and
+real environment variables take precedence over it.
 
 ### Try the pipeline without the web app
 
@@ -227,7 +229,8 @@ FLASK_HOST=0.0.0.0 FLASK_PORT=5000 FLASK_DEBUG=1 python app.py
 interactive Python console on any unhandled exception.
 
 The detector sets `YOLO_AUTOINSTALL=false` and `YOLO_OFFLINE=true` before it
-imports ultralytics (unless you set them yourself). Without that, ultralytics
+imports ultralytics (unless you set them yourself, in the environment or in
+`.env`). Without that, ultralytics
 sends anonymous usage analytics on every prediction, and `pip install`s
 `pi-heif` from inside the app the first time an upload is not a readable image.
 
@@ -431,7 +434,8 @@ pytest -q -m "not slow"
 | `tools/` | measuring the pipeline (`ocr_accuracy.py`) |
 | `tests/` | `pytest -m "not slow"` needs neither the model nor the network |
 
-Logs go through Python's `logging` (`python app.py` prints INFO and above).
+Logs go through Python's `logging`: INFO and above to stderr under
+`python app.py`, `flask run` or a WSGI server (`LOG_LEVEL` changes it).
 Unexpected errors are logged with their traceback; the page only says that
 something went wrong.
 
