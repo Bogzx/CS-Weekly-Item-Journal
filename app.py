@@ -806,7 +806,12 @@ def image_format(binary_data):
             fmt = img.format
             pixels = img.width * img.height
             img.verify()
-    except (UnidentifiedImageError, OSError, SyntaxError, Image.DecompressionBombError) as e:
+    except (UnidentifiedImageError, OSError, SyntaxError, Image.DecompressionBombError,
+            ImportError) as e:
+        # ImportError: once ultralytics is imported, Image.open is its wrapper,
+        # which tries to import pi_heif when Pillow fails. With autoinstall off
+        # (Src/ImageDetector/modified_detect_text.py) that raises
+        # ModuleNotFoundError instead of UnidentifiedImageError.
         raise ValueError(f'not a readable image ({e.__class__.__name__})')
     if pixels > MAX_IMAGE_PIXELS:
         raise ValueError(f'image is too large ({pixels / 1e6:.0f} megapixels, '
