@@ -10,6 +10,8 @@ import uuid
 import pytest
 from PIL import Image
 
+from Src.Web import uploads
+
 
 def png_data_url(size=(8, 8), subtype='png', fmt='PNG'):
     buf = io.BytesIO()
@@ -239,7 +241,7 @@ class TestImageFormatAllowlist:
         marker = tmp_path / 'ghostscript-ran'
 
         with pytest.raises(ValueError):
-            appmod.image_format(eps_bytes(marker))
+            uploads.image_format(eps_bytes(marker))
         assert not marker.exists()
 
     def test_eps_upload_is_refused(self, appmod, logged_in, monkeypatch, tmp_path):
@@ -265,28 +267,28 @@ class TestImageFormatAllowlist:
         Image.new('RGB', (8, 8)).save(buf, format='TIFF')
 
         with pytest.raises(ValueError):
-            appmod.image_format(buf.getvalue())
+            uploads.image_format(buf.getvalue())
 
     @pytest.mark.parametrize('fmt', ['PNG', 'JPEG', 'WEBP', 'BMP', 'GIF'])
     def test_screenshot_formats_are_accepted(self, appmod, fmt):
         buf = io.BytesIO()
         Image.new('RGB', (8, 8)).save(buf, format=fmt)
 
-        assert appmod.image_format(buf.getvalue()) == fmt
+        assert uploads.image_format(buf.getvalue()) == fmt
 
 
 class TestImageSizeLimit:
     def huge_png(self, appmod):
         # Solid colour compresses to a few hundred KB: well under the upload
         # limit, but ~45 MP once decoded.
-        side = int(appmod.MAX_IMAGE_PIXELS ** 0.5) + 100
+        side = int(uploads.MAX_IMAGE_PIXELS ** 0.5) + 100
         buf = io.BytesIO()
         Image.new('L', (side, side)).save(buf, format='PNG')
         return buf.getvalue()
 
     def test_image_over_the_pixel_limit_is_refused(self, appmod):
         with pytest.raises(ValueError, match='megapixels'):
-            appmod.image_format(self.huge_png(appmod))
+            uploads.image_format(self.huge_png(appmod))
 
     def test_huge_upload_never_reaches_the_pipeline(self, appmod, logged_in, monkeypatch):
         monkeypatch.setattr(appmod, 'process_image', lambda path: pytest.fail('pipeline reached'))
@@ -298,7 +300,7 @@ class TestImageSizeLimit:
         assert b'megapixels' in resp.data
 
     def test_8k_screenshot_is_within_the_limit(self, appmod):
-        assert 7680 * 4320 <= appmod.MAX_IMAGE_PIXELS
+        assert 7680 * 4320 <= uploads.MAX_IMAGE_PIXELS
 
 
 class TestLoginErrors:
@@ -350,5 +352,5 @@ class TestUltralyticsSideEffects:
 
         for junk in (b'not an image', eps_bytes(tmp_path / 'ghostscript-ran')):
             with pytest.raises(ValueError):
-                appmod.image_format(junk)
+                uploads.image_format(junk)
         assert started == []
