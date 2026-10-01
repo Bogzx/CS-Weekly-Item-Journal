@@ -1,0 +1,26 @@
+# The panel detector's dataset. tools/train_detector.py turns this into the
+# images/ + labels/ + data.yaml layout ultralytics expects.
+#
+# Images stay in Training_Images/ (the same files tools/ocr_accuracy.py
+# scores). Labels are one `0 cx cy w h` line per image in dataset/labels/.
+# See dataset/README.md for how they were made.
+
+names:
+  0: Box
+
+images_dir: Training_Images
+labels_dir: dataset/labels
+
+# The three validation images of the March 2025 training run, as shown in its
+# val_batch0_labels.jpg. Keeping them out of training reproduces that run's
+# split. Every other image below is a training image.
+val:
+  - image3.png
+  - weekly-drop-v0-vng9r4y8lymc1.webp
+  - what-are-the-odds-of-getting-a-9-skin-in-a-weekley-drop-fn-v0-va67pkamsric1.webp
+
+# In Training_Images/ but not part of the detector dataset.
+exclude:
+  high_res_output.jpg: not a care-package screenshot (a photo of image search results)
+  pythjonm.jpeg: duplicate of "n51265 (1).jpeg"
+  TEST FINAL.png: German main menu photographed at a steep angle, not the care-package screen; no axis-aligned box isolates the four cards
