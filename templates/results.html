@@ -330,14 +330,16 @@
 
                 {% if prices %}
                 <p class="score price-age">
-                    Prices fetched from Steam {{ prices.updated_at.strftime('%Y-%m-%d %H:%M') }} (server time),
-                    {{ prices.priced_items }} items priced.
+                    Steam prices for {{ prices.priced_items }} items: the newest was fetched
+                    {{ prices.newest_at.strftime('%Y-%m-%d %H:%M') }}, the oldest
+                    {{ prices.oldest_at.strftime('%Y-%m-%d %H:%M') }} (server time).
                 </p>
                 {% if prices.stale %}
                 <div class="error price-stale">
-                    <p>These prices are {{ (prices.age_hours / 24)|round(1) }} days old. The daily price
-                    update should keep them under a day old, so it has probably stopped working: check
-                    the app's log, or run <code>python Src/DB/bulk_scraper.py --drop-pool</code>.
+                    <p>Even the newest price is {{ (prices.newest_age_hours / 24)|round(1) }} days old.
+                    The daily price update should write new prices every day, so it has probably
+                    stopped working: check the app's log, or run
+                    <code>python Src/DB/bulk_scraper.py --drop-pool</code>.
                     (Warning shown after {{ stale_hours|int }} hours; set <code>PRICE_STALE_HOURS</code>.)</p>
                 </div>
                 {% endif %}

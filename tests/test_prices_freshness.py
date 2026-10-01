@@ -62,14 +62,22 @@ class TestPriceFreshness:
         with appmod.app.app_context():
             return price_freshness(hours)
 
-    def test_newest_fetched_price_counts(self, appmod, items_db):
+    def test_reports_newest_and_oldest_fetch(self, appmod, items_db):
         make_items_db(items_db, [('A', 0.5, 1, stamp(30)), ('B', 0.2, 1, stamp(5)), ('C', None, 1, None)])
 
         info = self.freshness(appmod)
 
         assert info['priced_items'] == 2
-        assert 4.9 < info['age_hours'] < 5.1
+        assert 4.9 < info['newest_age_hours'] < 5.1
+        assert 29.9 < info['oldest_age_hours'] < 30.1
+        assert info['newest_at'] > info['oldest_at']
         assert info['stale'] is False
+
+    def test_stale_follows_the_newest_price(self, appmod, items_db):
+        """One old leftover price is not a stopped crawl; no new price at all is."""
+        make_items_db(items_db, [('A', 0.5, 1, stamp(500)), ('B', 0.2, 1, stamp(2))])
+
+        assert self.freshness(appmod)['stale'] is False
 
     def test_old_prices_are_stale(self, appmod, items_db):
         make_items_db(items_db, [('A', 0.5, 1, stamp(72))])
@@ -112,20 +120,23 @@ class TestResultsPage:
 
     def test_shows_price_age_and_what_a_seller_gets(self, appmod, logged_in, stub_pipeline, monkeypatch):
         monkeypatch.setattr(appmod, 'price_freshness', lambda hours: {
-            'updated_at': datetime(2026, 10, 1, 12, 28), 'age_hours': 3.0, 'stale': False, 'priced_items': 42})
+            'newest_at': datetime(2026, 10, 1, 12, 28), 'oldest_at': datetime(2026, 9, 29, 0, 5),
+            'newest_age_hours': 3.0, 'oldest_age_hours': 63.0, 'stale': False, 'priced_items': 42})
 
         html = ' '.join(upload(logged_in).get_data(as_text=True).split())
 
-        assert 'Prices fetched from Steam 2026-10-01 12:28 (server time), 42 items priced.' in html
+        assert ('Steam prices for 42 items: the newest was fetched 2026-10-01 12:28, '
+                'the oldest 2026-09-29 00:05 (server time).') in html
         assert 'you would get $0.88 selling it' in html   # Recoil Case at $1.00
         assert 'you would get $0.23 selling it' in html   # Revolution Case at $0.26
         assert 'price-stale' not in html
 
     def test_warns_when_prices_are_stale(self, appmod, logged_in, stub_pipeline, monkeypatch):
         monkeypatch.setattr(appmod, 'price_freshness', lambda hours: {
-            'updated_at': datetime(2026, 9, 25, 0, 0), 'age_hours': 24 * 6.5, 'stale': True, 'priced_items': 42})
+            'newest_at': datetime(2026, 9, 25, 0, 0), 'oldest_at': datetime(2026, 9, 20, 0, 0),
+            'newest_age_hours': 24 * 6.5, 'oldest_age_hours': 24 * 11.5, 'stale': True, 'priced_items': 42})
 
         html = ' '.join(upload(logged_in).get_data(as_text=True).split())
 
-        assert 'These prices are 6.5 days old' in html
+        assert 'Even the newest price is 6.5 days old' in html
         assert 'PRICE_STALE_HOURS' in html
