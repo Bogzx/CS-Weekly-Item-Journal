@@ -18,6 +18,9 @@
 # Models/BOX_TRAINED.pt loads and the golden-image test passes on that set.
 # Also verified 2026-09-30 on Python 3.12.14, Linux, CPU: torch 2.14.0+cpu,
 # ultralytics 8.4.166, opencv-python and opencv-python-headless 4.14.0.94.
+# Also verified 2026-10-01 on Python 3.12, Linux aarch64, CPU: torch 2.14.1+cpu,
+# ultralytics 8.4.171, easyocr 1.7.2, opencv 4.14.0.
+# requirements.lock pins the exact set CI tests on Linux x86_64 / Python 3.12.
 
 # --- Web framework ---
 Flask>=3.0,<4
@@ -38,7 +41,13 @@ torchvision>=0.17
 # be a hard startup crash because the processor was built at import time; it is
 # now constructed lazily (app.py get_processor()), but the pin is still the
 # thing that makes detection work at all.
-ultralytics>=8.3.94
+#
+# ultralytics changes runtime behaviour even in patch releases: 8.4.171 began
+# replacing PIL.Image.open and pip-installing pi-heif on demand. The weekly CI
+# run and requirements.lock exist to catch that. The upper bound makes a new
+# minor series a reviewed bump: raise it once CI passes against that series,
+# then regenerate requirements.lock.
+ultralytics>=8.3.94,<8.5
 easyocr>=1.7.2
 # Two OpenCV distributions end up installed and both write the same `cv2`
 # package: ultralytics requires `opencv-python`, easyocr requires

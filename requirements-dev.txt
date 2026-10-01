@@ -1,0 +1,8 @@
+# Test and lint tools. Install next to the runtime dependencies:
+#   pip install -r requirements.txt -r requirements-dev.txt \
+#       --extra-index-url https://download.pytorch.org/whl/cpu
+#
+# ruff is pinned exactly because ruff.toml pins a rule set and a new ruff can
+# still change how a rule reports; bump both deliberately.
+pytest>=8,<10
+ruff==0.16.9
