@@ -455,6 +455,11 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
+Two exceptions, explained in [MODEL_CARD.md](MODEL_CARD.md#licensing). The
+detector `Models/BOX_TRAINED.pt` is fine-tuned from Ultralytics' AGPL-3.0
+weights. Most screenshots in `Training_Images/` are third-party (Reddit, X,
+YouTube thumbnails) and are not covered by the MIT licence.
+
 ---
 
 *Note: This project is not affiliated with Valve Corporation or the Counter-Strike franchise. All CS2/CS*
