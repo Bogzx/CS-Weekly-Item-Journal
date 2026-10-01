@@ -4,13 +4,38 @@ The logic lives in Src/Web/ (see its __init__.py for the map). This module
 reads the configuration, builds the app, and keeps the request handlers.
 """
 
+# ruff: noqa: E402  -- .env must be loaded before the project imports below.
+
 import logging
 import os
+
+from dotenv import load_dotenv
+
+# Load .env before importing anything from Src/: Src/Web/auth.py,
+# Src/Web/history.py and the detector read their settings when imported, so
+# loading it after them silently ignored SESSION_LIFETIME_DAYS,
+# CS2_RESET_HOUR_UTC and YOLO_* in .env. The file is the .env next to this
+# one (or DOTENV_PATH), not whatever python-dotenv finds walking up from the
+# working directory. Real environment variables still win over the file.
+load_dotenv(os.environ.get('DOTENV_PATH') or os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
+
+
+def _log_level(raw):
+    level = logging.getLevelName((raw or 'INFO').strip().upper())
+    return level if isinstance(level, int) else logging.INFO
+
+
+# Configured here, not only under `python app.py`, so INFO logs (uploads,
+# rejected files, the price job) also appear under `flask run` or a WSGI
+# server. basicConfig does nothing if the server already set up logging.
+logging.basicConfig(level=_log_level(os.environ.get('LOG_LEVEL')),
+                    format='%(asctime)s %(levelname)s %(name)s: %(message)s')
+logger = logging.getLogger(__name__)
+
 import sqlite3
 import uuid
 from datetime import datetime, timezone
 
-from dotenv import load_dotenv
 from flask import Flask, flash, redirect, render_template, request, session, url_for
 from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -37,11 +62,6 @@ from Src.Web.uploads import (
     cleanup_uploads as _cleanup_uploads, decode_pasted_image, save_pasted_image, save_uploaded_image,
 )
 from Src.Web.valuation import RECOMMENDED_PICKS, VALUATION_RULES, resolve_valuation_rule, seller_proceeds
-
-# Load variables from .env file
-load_dotenv()
-
-logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 app.secret_key = resolve_secret_key(os.environ.get('SECRET_KEY'))
@@ -628,8 +648,6 @@ def request_entity_too_large(error):
 
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(name)s: %(message)s')
-
     # Initialize the scheduler for daily price updates
     prices.init_scheduler(app.config['DATABASE'])
 
