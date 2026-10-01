@@ -281,9 +281,8 @@ On HTTP 429 the scraper backs off (60 s, 120 s, honouring `Retry-After`). If
 Steam keeps refusing it stops, keeps the prices it already fetched, and exits
 with status 1 so the scheduled job logs a failure.
 
-`Src/DB/update_price.py` also exists and updates items one at a time. It sleeps
-15 seconds before **every** request, so a full refresh of a 20k-row database
-takes over three days. Use it only for a handful of specific items.
+To refresh a single item, use `--query`, e.g.
+`python Src/DB/bulk_scraper.py --query "Revolution Case"`.
 
 ### Database verification
 
