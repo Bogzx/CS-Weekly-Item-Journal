@@ -1,9 +1,24 @@
-import cv2
-import easyocr
-from ultralytics import YOLO
 import os
 import tempfile
 from difflib import SequenceMatcher
+
+# Both must be set before ultralytics is first imported; it reads them once.
+#
+# YOLO_AUTOINSTALL: importing ultralytics replaces PIL.Image.open with a
+# wrapper that, whenever Pillow cannot open a file, runs
+# check_requirements("pi-heif"). With the default (on) that is a
+# `pip install pi-heif` inside the web process, triggered by any rejected
+# upload. The app never needs HEIF (see ALLOWED_IMAGE_FORMATS in app.py).
+#
+# YOLO_OFFLINE: the model is a local file, so ultralytics has nothing to fetch.
+# Offline also stops its anonymous usage analytics, which it otherwise sends
+# on every prediction, i.e. on every upload.
+os.environ.setdefault("YOLO_AUTOINSTALL", "false")
+os.environ.setdefault("YOLO_OFFLINE", "true")
+
+import cv2  # noqa: E402
+import easyocr  # noqa: E402
+from ultralytics import YOLO  # noqa: E402
 
 # Minimum YOLO confidence for a box to count as the weekly-drop panel.
 # Previously no threshold was passed at all, so ultralytics' permissive default
