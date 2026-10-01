@@ -11,6 +11,8 @@ cheapest wear), and recommend the two most valuable slots.
 
 import pytest
 
+from Src.Web import matching, valuation
+
 WEARS = ['Factory New', 'Minimal Wear', 'Field-Tested', 'Well-Worn', 'Battle-Scarred']
 
 
@@ -46,7 +48,7 @@ class TestAsPrice:
         (-3, None),          # negative prices are data corruption, not a bargain
     ])
     def test_coercion(self, appmod, raw, expected):
-        assert appmod._as_price(raw) == expected
+        assert valuation.as_price(raw) == expected
 
 
 class TestBaseItemName:
@@ -62,7 +64,7 @@ class TestBaseItemName:
         (None, ''),
     ])
     def test_strips_only_wears(self, appmod, name, expected):
-        assert appmod.base_item_name(name) == expected
+        assert valuation.base_item_name(name) == expected
 
 
 class TestSlotValue:
@@ -230,10 +232,10 @@ class TestRecommendedPicks:
 
     def test_candidates_default_to_tradable(self, appmod):
         """Rows from a database built before the tradable column existed."""
-        entry = appmod.candidate_entry({'id': 1, 'name': 'Revolution Case'}, 1.0, 'high')
+        entry = matching.candidate_entry({'id': 1, 'name': 'Revolution Case'}, 1.0, 'high')
 
         assert entry['tradable'] is True
-        assert appmod.candidate_entry({'tradable': 0}, 1.0, 'high')['tradable'] is False
+        assert matching.candidate_entry({'tradable': 0}, 1.0, 'high')['tradable'] is False
 
     def test_ties_keep_screen_order(self, appmod):
         results = [priced(1.00), priced(1.00), priced(1.00)]

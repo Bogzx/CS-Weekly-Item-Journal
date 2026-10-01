@@ -25,15 +25,9 @@ python Src/DB/fetch_item_lists.py
 # 3. Populate the database with items
 python Src/DB/populate_database.py
 
-# 4. Update item prices.
-#    Prefer bulk_scraper: it fetches a page of items per Steam request
-#    (Steam currently caps pages at 10), so the full market is ~3,500
-#    requests / ~10 hours at the 10 s delay. update_price.py sleeps 15 s
-#    before EVERY item, so a full refresh of a 20k-row database takes over
-#    three days. Use it only for a few items.
-python Src/DB/bulk_scraper.py --drop-pool  # Bulk: only what the weekly drop offers (~2.5 h)
-# OR
-python Src/DB/update_price.py  # One item at a time (very slow)
+# 4. Update item prices. bulk_scraper fetches a page of items per Steam
+#    request (Steam currently caps pages at 10) and waits 10 s between pages.
+python Src/DB/bulk_scraper.py --drop-pool  # only what the weekly drop offers (~2.5 h)
 
 # 5. Verify database contents
 python Src/DB/verify_database.py
@@ -95,9 +89,10 @@ and leaves any existing CSVs untouched.
 > answering it with HTTP 403. `create_cases.py`, which derived the case list
 > from that CSV, went with it.
 
-`graffiti_scraper.py` is an older, slower way to build `cs_graffiti.csv`
-from the Steam Market listing (~180 requests at 10 items each). You do not
-need it: `fetch_item_lists.py` already writes the graffiti list.
+`graffiti_scraper.py` (which built the graffiti list from the Steam Market)
+and `update_price.py` (which priced one item per request, 15 s apart) were
+removed: `fetch_item_lists.py` writes the graffiti list, and
+`bulk_scraper.py --query "<name>"` prices a single item.
 
 ### 3. Populating the Database
 
@@ -126,25 +121,8 @@ script is safe: existing rows are kept, so prices are not lost.
 
 ### 4. Updating Item Prices
 
-You have two options for updating item prices:
-
-#### Option A: Individual Price Updates
-
 ```bash
-python Src/DB/update_price.py
-```
-
-Options:
-
-* `--db path/to/db.db`: Specify a custom database path
-* `--collections "Collection1" "Collection2"`: Only update items from specific collections
-* `--max 100`: Limit the number of items to update
-* `--no-retry`: Disable automatic retry on rate limiting
-
-#### Option B: Bulk Price Updates (Recommended for Efficiency)
-
-```bash
-python Src/DB/bulk_scraper.py
+python Src/DB/bulk_scraper.py --drop-pool
 ```
 
 Options:
@@ -163,7 +141,9 @@ Options:
   (~8,900 items, ~900 requests, ~2.5 hours instead of ~10)
 * `--list-filters`: Show available filter options
 
-The bulk updater is much faster as it fetches many items at once rather than one by one.
+The price stored is Steam's `sell_price` for the item: the lowest current
+listing, i.e. what a buyer pays, in USD. A seller receives about 13% less
+after fees; the results page shows both.
 
 ### 5. Verifying the Database
 
@@ -196,11 +176,9 @@ python Src/DB/populate_database.py --collections "New Collection Name"
 ### Updating Prices for Specific Collections
 
 ```bash
-# Using individual updater
-python Src/DB/update_price.py --collections "Clutch Case" "The Clutch Collection"
-
-# Using bulk updater (faster)
 python Src/DB/bulk_scraper.py --collections "Clutch Case" "The Clutch Collection"
+# or a single item
+python Src/DB/bulk_scraper.py --query "Revolution Case"
 ```
 
 ### Finding the Most Valuable Items
@@ -237,7 +215,6 @@ Run any script with `--help` to see available options:
 
 ```bash
 python Src/DB/populate_database.py --help
-python Src/DB/update_price.py --help
 python Src/DB/bulk_scraper.py --help
 ```
 
