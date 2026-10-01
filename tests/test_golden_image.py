@@ -137,7 +137,7 @@ def test_accuracy_over_all_labelled_screenshots(repo_root):
 
     processor = WeeklyDropProcessor(os.path.join(repo_root, 'Models', 'BOX_TRAINED.pt'))
     summary = ocr_accuracy.summarise(
-        ocr_accuracy.evaluate(processor, ocr_accuracy.load_labels()))
+        ocr_accuracy.evaluate(processor, ocr_accuracy.load_labels(split='dev')))
 
     assert summary['slots_scored'] == 77
     assert summary['mean_similarity'] >= 0.79, summary

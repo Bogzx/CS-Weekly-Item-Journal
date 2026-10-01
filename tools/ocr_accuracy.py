@@ -14,11 +14,24 @@ reports:
 
 With --db (a built item database) it also runs the app's own matching
 (app.match_items_in_database) and reports how often the top candidate is the
-right item, and, for graffiti, the right colour too.
+right item, and, for graffiti, the right colour too. It then breaks that down
+by item type and by the confidence the app showed, which is what a user sees:
+how often a "high" or "medium" match is right, and how many slots get one.
+
+Every rate comes with a 95% interval: Wilson over slots, and a bootstrap over
+images (slots in one screenshot share its resolution and blur, so they are not
+independent; the image bootstrap is the more honest of the two).
+
+Splits: each labelled image has a "split". "dev" is every image in
+Training_Images/: the panel detector was trained on them and the text band,
+UI filter and confidence thresholds were tuned on them, so dev numbers are
+in-sample. "test" is for screenshots never used for training or tuning; there
+are none yet (see README "Accuracy").
 
 Usage (from the repository root):
     python tools/ocr_accuracy.py
     python tools/ocr_accuracy.py --db csgo_items.db --json out.json
+    python tools/ocr_accuracy.py --split test --db csgo_items.db
     python tools/ocr_accuracy.py --only image.png maxres2.jpg -v
 
 Slow: the first run downloads EasyOCR weights; after that ~1-3 s per image on
@@ -26,8 +39,12 @@ CPU.
 """
 
 import argparse
+import hashlib
 import json
+import math
 import os
+import platform
+import random
 import re
 import sys
 import time
@@ -38,7 +55,11 @@ sys.path.insert(0, REPO_ROOT)
 
 LABELS = os.path.join(REPO_ROOT, 'tests', 'fixtures', 'expected_names.json')
 IMAGES = os.path.join(REPO_ROOT, 'Training_Images')
+MODEL = os.path.join(REPO_ROOT, 'Models', 'BOX_TRAINED.pt')
 FUZZY_THRESHOLD = 0.9
+SPLITS = ('dev', 'test')
+CONFIDENCE_TIERS = ('high', 'medium', 'low', None)
+BOOTSTRAP_ROUNDS = 2000
 WEARS = ("Factory New", "Minimal Wear", "Field-Tested", "Well-Worn", "Battle-Scarred")
 
 
@@ -67,17 +88,33 @@ def item_identity(name):
     return name
 
 
-def load_labels(only=None):
+def item_type(name):
+    """'graffiti', 'skin' or 'case/other' (cases, capsules, the charm pack)."""
+    if name.startswith('Sealed Graffiti | '):
+        return 'graffiti'
+    return 'skin' if ' | ' in name else 'case/other'
+
+
+def load_labels(only=None, split=None):
+    """(file name, entry) for every labelled image, optionally one split only."""
     with open(LABELS, encoding='utf-8') as f:
         images = json.load(f)['images']
     selected = []
     for file_name, entry in sorted(images.items()):
         if only and file_name not in only:
             continue
+        if split and entry.get('split') != split:
+            continue
         if entry.get('duplicate_of') or entry.get('slots') is None:
             continue
         selected.append((file_name, entry))
     return selected
+
+
+def image_path(file_name, entry):
+    """Images live in Training_Images/ unless the label names another directory."""
+    return os.path.join(REPO_ROOT, entry['dir'], file_name) if 'dir' in entry \
+        else os.path.join(IMAGES, file_name)
 
 
 def slot_is_scored(entry, slot):
@@ -97,7 +134,7 @@ def evaluate(processor, labels, match=None, verbose=False):
     for file_name, entry in labels:
         started = time.time()
         try:
-            texts = processor.process_image(os.path.join(IMAGES, file_name), save_crops=False)
+            texts = processor.process_image(image_path(file_name, entry), save_crops=False)
             error = None
         except Exception as e:  # DetectionError, unreadable image, ...
             texts, error = [''] * 4, f'{e.__class__.__name__}: {e}'
@@ -110,6 +147,7 @@ def evaluate(processor, labels, match=None, verbose=False):
                 'image': file_name,
                 'slot': index,
                 'expected': slot['name'],
+                'type': item_type(slot['name']),
                 'ocr': text,
                 'scored': slot_is_scored(entry, slot),
                 'exact': normalise(text) == normalise(slot['name']),
@@ -141,6 +179,84 @@ def evaluate(processor, labels, match=None, verbose=False):
     return rows
 
 
+def wilson(successes, n, z=1.96):
+    """95% Wilson score interval for a proportion, as (low, high)."""
+    if n == 0:
+        return (0.0, 0.0)
+    p = successes / n
+    centre = (p + z * z / (2 * n)) / (1 + z * z / n)
+    half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / (1 + z * z / n)
+    return (max(0.0, centre - half), min(1.0, centre + half))
+
+
+def image_bootstrap(rows, key, rounds=BOOTSTRAP_ROUNDS, seed=0):
+    """95% interval for the slot rate of `key`, resampling whole images."""
+    by_image = {}
+    for row in rows:
+        by_image.setdefault(row['image'], []).append(row[key])
+    images = list(by_image.values())
+    if not images:
+        return (0.0, 0.0)
+    rng = random.Random(seed)
+    rates = []
+    for _ in range(rounds):
+        sample = [rng.choice(images) for _ in images]
+        slots = sum(len(slot_flags) for slot_flags in sample)
+        rates.append(sum(sum(slot_flags) for slot_flags in sample) / slots)
+    rates.sort()
+    return (rates[int(0.025 * rounds)], rates[int(0.975 * rounds) - 1])
+
+
+def rate(rows, key):
+    """Count, share and both 95% intervals of the slots where `key` is true."""
+    n = len(rows)
+    hits = sum(bool(r[key]) for r in rows)
+    return {'hits': hits, 'n': n, 'rate': round(hits / n, 4) if n else 0.0,
+            'wilson95': [round(v, 4) for v in wilson(hits, n)],
+            'image_bootstrap95': [round(v, 4) for v in image_bootstrap(rows, key)]}
+
+
+def by_type(rows, key):
+    return {kind: rate([r for r in rows if r['type'] == kind], key)
+            for kind in ('case/other', 'skin', 'graffiti')}
+
+
+def by_confidence(rows):
+    """Per confidence tier: slots, how many were the right item, and the
+    running coverage and precision if the app only trusted tiers this high."""
+    table, covered, right = [], 0, 0
+    total = len(rows) or 1
+    for tier in CONFIDENCE_TIERS:
+        tier_rows = [r for r in rows if r.get('match_confidence') == tier]
+        tier_right = sum(r['item_ok'] for r in tier_rows)
+        covered += len(tier_rows)
+        right += tier_right
+        table.append({'tier': tier or 'no match', 'slots': len(tier_rows), 'right': tier_right,
+                      'coverage_so_far': round(covered / total, 4),
+                      'precision_so_far': round(right / covered, 4) if covered else None})
+    return table
+
+
+def environment(db_path=None):
+    """What produced the numbers: library versions, model hash, item count."""
+    import cv2
+    import easyocr
+    import torch
+    import ultralytics
+
+    with open(MODEL, 'rb') as f:
+        model_sha256 = hashlib.sha256(f.read()).hexdigest()
+    env = {'python': platform.python_version(), 'platform': platform.machine(),
+           'torch': torch.__version__, 'ultralytics': ultralytics.__version__,
+           'easyocr': easyocr.__version__, 'opencv': cv2.__version__,
+           'model_sha256': model_sha256}
+    if db_path:
+        import sqlite3
+        with sqlite3.connect(db_path) as conn:
+            env['db_items'] = conn.execute('SELECT COUNT(*) FROM items').fetchone()[0]
+    return env
+
+
 def summarise(rows):
     scored = [r for r in rows if r['scored']]
     n = len(scored) or 1
@@ -158,35 +274,74 @@ def summarise(rows):
     return summary
 
 
+def report(rows):
+    """Rates with intervals, per type and per confidence tier (scored slots)."""
+    scored = [r for r in rows if r['scored']]
+    keys = ['exact', 'fuzzy'] + (['item_ok', 'exact_item_ok'] if scored and 'item_ok' in scored[0] else [])
+    result = {'rates': {key: rate(scored, key) for key in keys},
+              'by_type': by_type(scored, 'item_ok' if 'item_ok' in keys else 'fuzzy')}
+    if 'item_ok' in keys:
+        result['by_confidence'] = by_confidence(scored)
+    return result
+
+
+def _fmt(entry):
+    low, high = entry['wilson95']
+    blow, bhigh = entry['image_bootstrap95']
+    return (f"{entry['hits']:3d}/{entry['n']:<3d} {entry['rate']:6.1%}   "
+            f"Wilson {low:.0%}-{high:.0%}, image bootstrap {blow:.0%}-{bhigh:.0%}")
+
+
 def main(argv=None):
-    parser = argparse.ArgumentParser(description='OCR accuracy over the labelled Training_Images')
+    parser = argparse.ArgumentParser(description='OCR accuracy over the labelled screenshots')
     parser.add_argument('--db', help='Built item database; adds item-match accuracy')
+    parser.add_argument('--split', choices=SPLITS + ('all',), default='dev',
+                        help='dev: the Training_Images (in-sample); test: held-out screenshots')
     parser.add_argument('--only', nargs='+', help='Only these image file names')
     parser.add_argument('--json', help='Write every slot result and the summary to this file')
     parser.add_argument('-v', '--verbose', action='store_true', help='Print every slot')
     args = parser.parse_args(argv)
 
+    labels = load_labels(set(args.only) if args.only else None,
+                         None if args.split == 'all' else args.split)
+    if not labels:
+        print(f"No labelled images in split {args.split!r}. Held-out screenshots go in "
+              f"tests/fixtures/expected_names.json with \"split\": \"test\" (README \"Accuracy\").")
+        return 1
+
     from Src.ImageDetector.modified_detect_text import WeeklyDropProcessor
 
-    labels = load_labels(set(args.only) if args.only else None)
     match = load_matcher(args.db) if args.db else None
-    processor = WeeklyDropProcessor(os.path.join(REPO_ROOT, 'Models', 'BOX_TRAINED.pt'))
+    processor = WeeklyDropProcessor(MODEL)
     rows = evaluate(processor, labels, match, verbose=args.verbose)
     summary = summarise(rows)
+    details = report(rows)
+    env = environment(args.db)
 
-    n = summary['slots_scored'] or 1
-    print(f"\nScored slots: {summary['slots_scored']} over {summary['images']} images "
+    print(f"\nSplit {args.split}: {summary['slots_scored']} scored slots over {summary['images']} images "
           f"(panel not found in {summary['panel_not_found']})")
-    print(f"  exact OCR:        {summary['exact']:3d}  ({summary['exact'] / n:.1%})")
-    print(f"  fuzzy OCR >= {FUZZY_THRESHOLD}: {summary['fuzzy']:3d}  ({summary['fuzzy'] / n:.1%})")
-    print(f"  mean similarity:  {summary['mean_similarity']:.3f}")
-    if 'item_ok' in summary:
-        print(f"  right item:       {summary['item_ok']:3d}  ({summary['item_ok'] / n:.1%})")
-        print(f"  right item+colour:{summary['exact_item_ok']:4d}  ({summary['exact_item_ok'] / n:.1%})")
+    print(f"  exact OCR:          {_fmt(details['rates']['exact'])}")
+    print(f"  fuzzy OCR >= {FUZZY_THRESHOLD}:   {_fmt(details['rates']['fuzzy'])}")
+    print(f"  mean similarity:    {summary['mean_similarity']:.3f}")
+    if 'item_ok' in details['rates']:
+        print(f"  right item:         {_fmt(details['rates']['item_ok'])}")
+        print(f"  right item+colour:  {_fmt(details['rates']['exact_item_ok'])}")
+        print("\n  Right item by type:")
+        for kind, entry in details['by_type'].items():
+            print(f"    {kind:11} {entry['hits']:3d}/{entry['n']:<3d} {entry['rate']:6.1%}")
+        print("\n  By the confidence the app showed (cumulative from the top tier):")
+        print("    tier       slots  right   coverage  precision")
+        for row in details['by_confidence']:
+            precision = '-' if row['precision_so_far'] is None else f"{row['precision_so_far']:.1%}"
+            print(f"    {row['tier']:9} {row['slots']:6d} {row['right']:6d}   "
+                  f"{row['coverage_so_far']:8.1%}  {precision:>9}")
+    print("\n  " + ", ".join(f"{k} {v}" for k, v in env.items() if k != 'model_sha256')
+          + f", model sha256 {env['model_sha256'][:12]}")
 
     if args.json:
         with open(args.json, 'w', encoding='utf-8') as f:
-            json.dump({'summary': summary, 'slots': rows}, f, indent=1, ensure_ascii=False)
+            json.dump({'split': args.split, 'environment': env, 'summary': summary,
+                       'report': details, 'slots': rows}, f, indent=1, ensure_ascii=False)
     return 0
 
 
