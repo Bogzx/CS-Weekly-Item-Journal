@@ -324,10 +324,12 @@ and the game 10 % on top of the seller's amount, each at least $0.01. So the
 recommendation box also shows what you would receive by selling at that price
 (about 13 % less; $0.03 becomes $0.01).
 
-**How old.** The results page says when the prices were fetched (server
-time). When the newest price is older than `PRICE_STALE_HOURS` (default 48),
-it shows a warning: the daily update should keep prices under a day old, so
-the crawl has probably been failing.
+**How old.** The results page says when the newest and the oldest stored
+prices were fetched (server time). When even the newest is older than
+`PRICE_STALE_HOURS` (default 48), it shows a warning: the daily update writes
+new prices every day, so the crawl has probably been failing. An old oldest
+price on its own is not a warning: an item that had no listing during the
+last crawls simply keeps its last price.
 
 ## 🔄 Updating Prices
 
