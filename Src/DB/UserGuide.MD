@@ -141,7 +141,9 @@ Options:
   (~8,900 items, ~900 requests, ~2.5 hours instead of ~10)
 * `--list-filters`: Show available filter options
 
-The bulk updater fetches a page of items per request rather than one by one.
+The price stored is Steam's `sell_price` for the item: the lowest current
+listing, i.e. what a buyer pays, in USD. A seller receives about 13% less
+after fees; the results page shows both.
 
 ### 5. Verifying the Database
 

@@ -171,3 +171,35 @@ def annotate_recommendation(item_results, rule=DEFAULT_VALUATION_RULE, picks=REC
         result['pick_rank'] = rank
         result['value_match']['recommended'] = True
     return ranked
+
+
+# Steam Community Market fees, charged on top of what the seller receives:
+# 5% to Steam and 10% to the game (CS2), each rounded down to the cent and at
+# least 1 cent. A listing's price is what the buyer pays, so a seller gets
+# about 13% less than the price shown here (Steam's own "You receive" figure).
+STEAM_FEE = 0.05
+GAME_FEE = 0.10
+
+
+def _fees_cents(received_cents):
+    return (max(int(received_cents * STEAM_FEE), 1)
+            + max(int(received_cents * GAME_FEE), 1))
+
+
+def seller_proceeds(price):
+    """What a seller receives when an item sells at `price` (USD), after fees.
+
+    The largest amount whose price including both fees is still at most
+    `price`; None for no price, 0.0 when the price cannot even cover the
+    minimum fees.
+    """
+    price = as_price(price)
+    if price is None:
+        return None
+    buyer_cents = round(price * 100)
+    received = max(0, int(buyer_cents / (1 + STEAM_FEE + GAME_FEE)))
+    while received > 0 and received + _fees_cents(received) > buyer_cents:
+        received -= 1
+    while received + 1 + _fees_cents(received + 1) <= buyer_cents:
+        received += 1
+    return received / 100
