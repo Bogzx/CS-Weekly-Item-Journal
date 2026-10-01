@@ -132,7 +132,9 @@ python -c "import secrets; print('SECRET_KEY=' + secrets.token_hex(32))"
 ```
 
 Open `.env` and replace the placeholder `SECRET_KEY` line with the generated
-one. Everything else has a working default.
+one. Everything else has a working default. The app reads the `.env` next to
+`app.py` (or the file named by the environment variable `DOTENV_PATH`), and
+real environment variables take precedence over it.
 
 ### Try the pipeline without the web app
 
@@ -227,7 +229,8 @@ FLASK_HOST=0.0.0.0 FLASK_PORT=5000 FLASK_DEBUG=1 python app.py
 interactive Python console on any unhandled exception.
 
 The detector sets `YOLO_AUTOINSTALL=false` and `YOLO_OFFLINE=true` before it
-imports ultralytics (unless you set them yourself). Without that, ultralytics
+imports ultralytics (unless you set them yourself, in the environment or in
+`.env`). Without that, ultralytics
 sends anonymous usage analytics on every prediction, and `pip install`s
 `pi-heif` from inside the app the first time an upload is not a readable image.
 
@@ -315,6 +318,19 @@ rule only changes how skins and colour-less graffiti compare to them.
 Drop items that cannot be sold (so far only the **Charm Detachment Pack**)
 match normally but show **Not tradable — $0** and are never recommended.
 
+**Which price.** The stored price is Steam's `sell_price`: the lowest current
+listing in USD, i.e. what a buyer pays. A seller gets less. Steam takes 5 %
+and the game 10 % on top of the seller's amount, each at least $0.01. So the
+recommendation box also shows what you would receive by selling at that price
+(about 13 % less; $0.03 becomes $0.01).
+
+**How old.** The results page says when the newest and the oldest stored
+prices were fetched (server time). When even the newest is older than
+`PRICE_STALE_HOURS` (default 48), it shows a warning: the daily update writes
+new prices every day, so the crawl has probably been failing. An old oldest
+price on its own is not a warning: an item that had no listing during the
+last crawls simply keeps its last price.
+
 ## 🔄 Updating Prices
 
 The scheduler runs a daily bulk price update at 00:00 UTC once the app is
@@ -348,9 +364,8 @@ On HTTP 429 the scraper backs off (60 s, 120 s, honouring `Retry-After`). If
 Steam keeps refusing it stops, keeps the prices it already fetched, and exits
 with status 1 so the scheduled job logs a failure.
 
-`Src/DB/update_price.py` also exists and updates items one at a time. It sleeps
-15 seconds before **every** request, so a full refresh of a 20k-row database
-takes over three days. Use it only for a handful of specific items.
+To refresh a single item, use `--query`, e.g.
+`python Src/DB/bulk_scraper.py --query "Revolution Case"`.
 
 ### Database verification
 
@@ -409,6 +424,23 @@ pytest -q -m "not slow"
   (and set `SESSION_COOKIE_SECURE=True`, and `TRUSTED_PROXIES=1` so the
   login throttle sees real client addresses) before exposing it more widely.
 
+## 🗂️ Code layout
+
+| Path | What it holds |
+|---|---|
+| `app.py` | Flask app: configuration, wiring and the request handlers |
+| `Src/Web/` | the app's logic, one module per concern: `auth` (sessions, CSRF, login throttle), `db`, `uploads` (screenshot validation), `matching`, `valuation`, `history`, `prices` (the daily crawl) |
+| `Src/ImageDetector/` | the vision pipeline (`modified_detect_text.py`) and the fuzzy matcher (`item_matcher.py`) |
+| `Src/DB/` | building the item database and crawling prices (`Src/DB/UserGuide.MD`) |
+| `templates/` | the pages: hand-written HTML, CSS and JavaScript |
+| `tools/` | measuring the pipeline (`ocr_accuracy.py`) |
+| `tests/` | `pytest -m "not slow"` needs neither the model nor the network |
+
+Logs go through Python's `logging`: INFO and above to stderr under
+`python app.py`, `flask run` or a WSGI server (`LOG_LEVEL` changes it).
+Unexpected errors are logged with their traceback; the page only says that
+something went wrong.
+
 ## 🤝 Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
@@ -422,6 +454,11 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ## 📜 License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
+
+Two exceptions, explained in [MODEL_CARD.md](MODEL_CARD.md#licensing). The
+detector `Models/BOX_TRAINED.pt` is fine-tuned from Ultralytics' AGPL-3.0
+weights. Most screenshots in `Training_Images/` are third-party (Reddit, X,
+YouTube thumbnails) and are not covered by the MIT licence.
 
 ---
 

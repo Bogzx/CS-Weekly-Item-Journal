@@ -10,7 +10,7 @@
 | Framework | Ultralytics 8.3.94 at training time. Loading it needs `ultralytics>=8.3.94` (YOLO11 modules `C3k2`, `C2PSA`) |
 | Trained | 2025-03-20 on Google Colab (the run's data path was `/content/data.yaml`), 134 s for 80 epochs |
 | File | 19.3 MB, sha256 `189723c293a7f9b01ea2dbf5c59584f55c687318dae9e1c36ef05bcaa7cc1f67` (`Models/SHA256SUMS`) |
-| Licence | Fine-tuned from Ultralytics' `yolo11s.pt`, which Ultralytics publishes under AGPL-3.0; check that licence before shipping the model in a closed product. The repository's own code is MIT |
+| Licence | Not simply MIT, see [Licensing](#licensing): fine-tuned from Ultralytics' AGPL-3.0 `yolo11s.pt`, on third-party screenshots |
 | Also published as | release asset `model-v1` (with the training run and the old labels) |
 
 ## Intended use
@@ -34,8 +34,9 @@ them.
   are phone photos of a monitor.
 - Settings: imgsz 1024, batch 16, 80 epochs, seed 0, deterministic, default
   augmentation (mosaic, HSV jitter, translate 0.1, scale 0.5, horizontal flip).
-- The original labels were never committed. Labels that reproduce the dataset
-  (21 of the 22 images; the exact original list is not recoverable) are in
+- The original labels were never committed. Pseudo-labels from the shipped
+  model, checked by eye (21 of the 22 images; the exact original list is not
+  recoverable), are in
   [`dataset/`](dataset/README.md), with `tools/train_detector.py` to retrain.
 
 ## Evaluation
@@ -91,6 +92,20 @@ exists.
   screenshot finds its panel but rarely its items.
 - **Dataset size.** 22 images is very little. All of them are from 2023–2025
   versions of the screen.
+
+## Licensing
+
+The repository's MIT licence covers its own code. It does not cover these:
+
+- **The model weights.** `BOX_TRAINED.pt` is fine-tuned from Ultralytics'
+  `yolo11s.pt`, which Ultralytics publishes under AGPL-3.0. Ultralytics states
+  that models trained from its weights fall under AGPL-3.0 unless you hold
+  its Enterprise License. Check that before shipping the model in a closed or
+  hosted product.
+- **The training and evaluation screenshots.** Most images in
+  `Training_Images/` are third-party: posts on Reddit and X and YouTube video
+  thumbnails, by their respective authors. They are here as research and test
+  data, not under the MIT licence. Game imagery belongs to Valve.
 
 ## Reproduce
 

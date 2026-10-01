@@ -328,6 +328,23 @@
                 
                 {% if item_results %}
 
+                {% if prices %}
+                <p class="score price-age">
+                    Steam prices for {{ prices.priced_items }} items: the newest was fetched
+                    {{ prices.newest_at.strftime('%Y-%m-%d %H:%M') }}, the oldest
+                    {{ prices.oldest_at.strftime('%Y-%m-%d %H:%M') }} (server time).
+                </p>
+                {% if prices.stale %}
+                <div class="error price-stale">
+                    <p>Even the newest price is {{ (prices.newest_age_hours / 24)|round(1) }} days old.
+                    The daily price update should write new prices every day, so it has probably
+                    stopped working: check the app's log, or run
+                    <code>python Src/DB/bulk_scraper.py --drop-pool</code>.
+                    (Warning shown after {{ stale_hours|int }} hours; set <code>PRICE_STALE_HOURS</code>.)</p>
+                </div>
+                {% endif %}
+                {% endif %}
+
                 {% if recommendations %}
                 <div class="recommendation-banner">
                     <p class="rec-title">⭐ Recommended {{ 'picks' if recommendations|length > 1 else 'pick' }} — you can claim 2 of the 4 items</p>
@@ -336,6 +353,7 @@
                         <li class="rec-item">
                             <strong>{{ rec.display_name }}</strong>
                             — <span class="rec-price">${{ "%.2f"|format(rec.value) }}</span>
+                            <span class="score">(you would get ${{ "%.2f"|format(rec.value|after_fees) }} selling it)</span>
                             {% if rec.priced_variants > 1 %}
                             <span class="score">(${{ "%.2f"|format(rec.price_min) }}–${{ "%.2f"|format(rec.price_max) }} across {{ rec.priced_variants }} {{ rec.variant_kind }})</span>
                             {% endif %}
@@ -343,6 +361,9 @@
                     {% endfor %}
                     </ol>
                     <p class="score">
+                        Prices are the lowest current Steam Market listing, i.e. what a buyer pays.
+                        A seller receives about 13% less after Steam's and the game's fees (more on
+                        items of a few cents: each fee is at least $0.01).
                         Ranked by the most recent Steam Market price stored for each item. The drop
                         screen does not show a skin's wear (and the scan often misses a graffiti's
                         colour), so those are valued at the <strong>{{ valuation_label }}</strong> among

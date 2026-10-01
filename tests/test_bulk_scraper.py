@@ -327,7 +327,9 @@ def test_daily_job_crawls_the_drop_pool(appmod, monkeypatch, tmp_path):
         stdout = ''
         stderr = ''
 
-    monkeypatch.setattr(appmod.subprocess, 'run', lambda cmd, **kw: commands.append(cmd) or Done())
+    from Src.Web import prices
+
+    monkeypatch.setattr(prices.subprocess, 'run', lambda cmd, **kw: commands.append(cmd) or Done())
 
     appmod.update_prices_job()
 
